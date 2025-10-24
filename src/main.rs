@@ -52,6 +52,8 @@ impl std::error::Error for CrystalValidateError {}
 #[derive(Debug)]
 pub struct CrystalBuilder {
     crystal: Crystal,
+    is_init_lattice: bool,
+    is_init_atoms: bool,
 }
 
 impl CrystalBuilder {
@@ -63,6 +65,8 @@ impl CrystalBuilder {
                 positions: vec![],
                 kinds: vec![],
             },
+            is_init_lattice: false,
+            is_init_atoms: false,
         }
     }
 
@@ -74,6 +78,8 @@ impl CrystalBuilder {
                 lattice,
                 ..self.crystal
             },
+            is_init_lattice: true,
+            is_init_atoms: self.is_init_atoms,
         }
     }
 
@@ -90,12 +96,26 @@ impl CrystalBuilder {
                 kinds,
                 ..self.crystal
             },
+            is_init_lattice: self.is_init_lattice,
+            is_init_atoms: true,
         }
     }
 
     /// build and validate the it is a valid crystal.
     /// At the moment only validate the size(positions) == size(numbers)
     pub fn build(self) -> Result<Crystal, CrystalValidateError> {
+        if !self.is_init_lattice {
+            return Err(CrystalValidateError {
+                message: "crystal lattice not initialized".to_string(),
+            });
+        }
+
+        if !self.is_init_atoms {
+            return Err(CrystalValidateError {
+                message: "crystal atoms not initialized".to_string(),
+            });
+        }
+
         // TODO: call validate
         if !self.crystal.positions.len() == self.crystal.kinds.len() {
             return Err(CrystalValidateError {
@@ -154,14 +174,15 @@ fn main() {
     let crystal = CrystalBuilder::new()
         .with_lattice(lattice)
         .with_atoms(&atoms)
-        .build();
+        .build()
+        .unwrap();
 
     dbg!(crystal);
 
     // this should be a compiler error since it in not fully initialized
     // use state to annotate
     let lattice = Lattice::default();
-    let crystal = CrystalBuilder::new().with_lattice(lattice).build();
+    let crystal = CrystalBuilder::new().with_lattice(lattice).build().unwrap();
 
     dbg!(crystal);
 }
