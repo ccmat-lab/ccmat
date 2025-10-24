@@ -3,4 +3,7 @@ name = "commat"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+compile_failure = []
+
 [dependencies]
