@@ -6,4 +6,5 @@ edition = "2024"
 [features]
 compile_failure = []
 
-[dependencies]
+[dev-dependencies]
+trybuild = "1.0.112"

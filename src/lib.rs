@@ -53,7 +53,8 @@ pub struct AtomsSet;
 pub struct AtomsNotSet;
 
 /// use builder pattern so the validation is runtime
-/// To make it a compile time check, I can use the proc macro (build/build_unchcek API).
+/// To make it a compile time check, I can use the proc macro (`build`/`build_unchcek` API).
+///
 /// # Example
 /// ```
 /// use commat::*;
@@ -66,7 +67,6 @@ pub struct AtomsNotSet;
 ///     .build()
 ///     .unwrap();
 /// ```
-///
 #[derive(Debug)]
 pub struct CrystalBuilder<LatticeState, AtomsState> {
     crystal: Crystal,
@@ -152,7 +152,7 @@ pub struct Atom {
 
 impl Atom {
     // TODO: kind can be more complex, need a type to hold it.
-    fn new(position: [f64; 3], kind: i32) -> Self {
+    pub fn new(position: [f64; 3], kind: i32) -> Self {
         Atom { position, kind }
     }
 }
@@ -184,10 +184,11 @@ impl Crystal {
 mod tests {
     use super::*;
 
-    fn build_insufficient_inputs() {
-        // this should be a compiler error since it in not fully initialized
-        // use state to annotate
-        let lattice = Lattice::default();
-        let crystal = CrystalBuilder::new().with_lattice(lattice).build().unwrap();
+    #[test]
+    fn build_crystal() {
+        let t = trybuild::TestCases::new();
+        t.compile_fail("tests/build_crystal/fail_*.rs");
+
+        t.pass("tests/build_crystal/pass_*.rs");
     }
 }

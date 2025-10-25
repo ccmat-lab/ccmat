@@ -1,0 +1,17 @@
+error[E0599]: no method named `with_lattice` found for struct `CrystalBuilder<LatticeSet, AtomsNotSet>` in the current scope
+ --> tests/build_crystal/fail_duplicate_with_lattice.rs:8:10
+  |
+6 |       let _ = CrystalBuilder::new()
+  |               ---------------------
+  |               |
+  |  _____________method `with_lattice` is available on `CrystalBuilder<LatticeNotSet, AtomsNotSet>`
+  | |
+7 | |         .with_lattice(lattice)
+8 | |         .with_lattice(lattice)
+  | |_________-^^^^^^^^^^^^
+  |
+help: there is a method `with_atoms` with a similar name
+  |
+8 -         .with_lattice(lattice)
+8 +         .with_atoms(lattice)
+  |
