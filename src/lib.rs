@@ -303,9 +303,8 @@ impl CrystalBuilder<LatticeSet, SitesSet> {
     }
 
     // build without runtime validation this is for proc macro which valid in compile time.
-    //
-    // unsafe because there is no validation for the structure.
-    unsafe fn build_uncheck(self) -> Crystal {
+    // uncheck logic errors
+    fn build_uncheck(self) -> Crystal {
         self.crystal
     }
 
@@ -317,7 +316,7 @@ impl CrystalBuilder<LatticeSet, SitesSet> {
     pub fn build(self) -> Result<Crystal, CrystalValidateError> {
         self.validate()?;
 
-        let crystal = unsafe { self.build_uncheck() };
+        let crystal = self.build_uncheck();
 
         Ok(crystal)
     }
