@@ -6,8 +6,19 @@ version = 4
 name = "ccmat"
 version = "0.1.0"
 dependencies = [
+ "ccmat-core",
+]
+
+[[package]]
+name = "ccmat-core"
+version = "0.1.0"
+dependencies = [
  "trybuild",
 ]
+
+[[package]]
+name = "ccmat-kspace"
+version = "0.1.0"
 
 [[package]]
 name = "equivalent"

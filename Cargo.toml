@@ -1,4 +1,8 @@
-[package]
+[workspace]
+resolver = "3"
+members = [ "ccmat","ccmat-core", "ccmat-kspace"]
+
+[workspace.package]
 name = "ccmat"
 version = "0.1.0"
 description = "blob for every crates relate to ccmat utils, and crates."
@@ -13,6 +17,3 @@ exclude = [
     "misc/*",
     "python/*",
 ]
-
-[dev-dependencies]
-trybuild = "1.0.112"

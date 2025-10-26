@@ -130,7 +130,7 @@ macro_rules! __vec3_angstrom {
 ///
 /// - **Named form** (explicit `a=`, `b=`, `c=`):
 ///   ```
-///   use ccmat::lattice_angstrom;
+///   use ccmat_core::lattice_angstrom;
 ///
 ///   let latt = lattice_angstrom!(
 ///       a = (1.0, 0.0, 0.0),
@@ -141,7 +141,7 @@ macro_rules! __vec3_angstrom {
 ///
 /// - **Positional form** (omit names, ordered as `a`, `b`, `c`):
 ///   ```
-///   use ccmat::{lattice_angstrom, Lattice, Angstrom};
+///   use ccmat_core::{lattice_angstrom, Lattice, Angstrom};
 ///
 ///   let latt = lattice_angstrom!(
 ///       (1.0, 0.0, 0.0),
@@ -155,7 +155,7 @@ macro_rules! __vec3_angstrom {
 ///
 /// # Example
 /// ```
-/// use ccmat::{lattice_angstrom, Lattice, Angstrom};
+/// use ccmat_core::{lattice_angstrom, Lattice, Angstrom};
 ///
 /// let latt = lattice_angstrom!(
 ///     a = [2.5, 0.0, 0.0],
@@ -214,7 +214,7 @@ pub struct SitesNotSet;
 ///
 /// # Example
 /// ```
-/// use ccmat::*;
+/// use ccmat_core::*;
 ///
 /// let lattice = lattice_angstrom![
 ///     a = (1.0, 0.0, 0.0),
