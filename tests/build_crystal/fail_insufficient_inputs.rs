@@ -1,4 +1,4 @@
-use commat::{lattice_angstrom, Atom, CrystalBuilder};
+use ccmat::{lattice_angstrom, Atom, CrystalBuilder};
 
 fn main() {
     let lattice = lattice_angstrom![

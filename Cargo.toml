@@ -1,10 +1,14 @@
 [package]
-name = "commat"
+name = "ccmat"
 version = "0.1.0"
+description = "blob for every crates relate to ccmat utils, and crates."
 edition = "2024"
-
-[features]
-compile_failure = []
+authors = ["Jusong Yu <jusong.d.yu@gmail.com>"]
+readme = "README.md"
+repository = "https://github.com/unkcpz/rsdos"
+homepage = "https://github.com/ccmat-lab/ccmat"
+license = "MIT OR Apache-2.0"
+keywords = ["science", "crystar", "material", "molecule"]
 
 [dev-dependencies]
 trybuild = "1.0.112"

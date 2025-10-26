@@ -3,7 +3,7 @@
 version = 4
 
 [[package]]
-name = "commat"
+name = "ccmat"
 version = "0.1.0"
 dependencies = [
  "trybuild",

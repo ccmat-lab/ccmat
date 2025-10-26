@@ -1,7 +1,7 @@
 /// notes:
 /// Operation safety is guranteed by the type.
 /// Use Angstrom as the major internal and default API unit to be consistent with xx/xx.
-/// Internally use FracCoord to represent the position to make sure fractional
+/// Internally use ``FracCoord`` to represent the position to make sure fractional
 /// coords don’t change if lattice changes shape or scale.
 ///
 /// - Use 'lattice'
@@ -15,10 +15,10 @@ pub struct Angstrom(pub f64);
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Bohr(pub f64);
 
-// FracCoord [0.0, 1.0) and only used internally for site position.
-// TODO: internally I need to check the Frac is valid in between 0.0~1.0
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct FracCoord(f64);
+// // FracCoord [0.0, 1.0) and only used internally for site position.
+// // TODO: internally I need to check the Frac is valid in between 0.0~1.0
+// #[derive(Debug, Clone, Copy, PartialEq)]
+// struct FracCoord(f64);
 
 /// Lattice
 /// inner data structure of the struct are private.
@@ -31,8 +31,24 @@ pub struct Lattice {
 
 impl Lattice {
     // TODO: how to use type system to validate the row/column definition or unit?
+    #[must_use]
     pub fn new(a: [Angstrom; 3], b: [Angstrom; 3], c: [Angstrom; 3]) -> Self {
         Lattice { a, b, c }
+    }
+
+    #[must_use]
+    pub fn a(&self) -> [Angstrom; 3] {
+        self.a
+    }
+
+    #[must_use]
+    pub fn b(&self) -> [Angstrom; 3] {
+        self.b
+    }
+
+    #[must_use]
+    pub fn c(&self) -> [Angstrom; 3] {
+        self.c
     }
 }
 
@@ -66,7 +82,7 @@ macro_rules! __vec3_angstrom {
 ///
 /// - **Named form** (explicit `a=`, `b=`, `c=`):
 ///   ```
-///   use commat::lattice_angstrom;
+///   use ccmat::lattice_angstrom;
 ///
 ///   let latt = lattice_angstrom!(
 ///       a = (1.0, 0.0, 0.0),
@@ -77,7 +93,7 @@ macro_rules! __vec3_angstrom {
 ///
 /// - **Positional form** (omit names, ordered as `a`, `b`, `c`):
 ///   ```
-///   use commat::{lattice_angstrom, Lattice, Angstrom};
+///   use ccmat::{lattice_angstrom, Lattice, Angstrom};
 ///
 ///   let latt = lattice_angstrom!(
 ///       (1.0, 0.0, 0.0),
@@ -91,7 +107,7 @@ macro_rules! __vec3_angstrom {
 ///
 /// # Example
 /// ```
-/// use commat::{lattice_angstrom, Lattice, Angstrom};
+/// use ccmat::{lattice_angstrom, Lattice, Angstrom};
 ///
 /// let latt = lattice_angstrom!(
 ///     a = [2.5, 0.0, 0.0],
@@ -151,7 +167,7 @@ pub struct AtomsNotSet;
 ///
 /// # Example
 /// ```
-/// use commat::*;
+/// use ccmat::*;
 ///
 /// let lattice = lattice_angstrom![
 ///     a = (1.0, 0.0, 0.0),
@@ -172,22 +188,24 @@ pub struct CrystalBuilder<LatticeState, AtomsState> {
     _atoms: std::marker::PhantomData<AtomsState>,
 }
 
-impl CrystalBuilder<LatticeNotSet, AtomsNotSet> {
-    #[must_use]
-    pub fn new() -> Self {
-        CrystalBuilder {
+impl Default for CrystalBuilder<LatticeNotSet, AtomsNotSet> {
+    fn default() -> Self {
+        Self {
             crystal: Crystal {
-                lattice: Lattice::new(
-                    [Angstrom(1.0), Angstrom(0.0), Angstrom(0.0)],
-                    [Angstrom(0.0), Angstrom(1.0), Angstrom(0.0)],
-                    [Angstrom(0.0), Angstrom(0.0), Angstrom(1.0)],
-                ),
+                lattice: lattice_angstrom!([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0],),
                 positions: vec![],
                 kinds: vec![],
             },
             _lattice: std::marker::PhantomData,
             _atoms: std::marker::PhantomData,
         }
+    }
+}
+
+impl CrystalBuilder<LatticeNotSet, AtomsNotSet> {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
     }
 }
 
