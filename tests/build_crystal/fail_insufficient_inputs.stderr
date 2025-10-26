@@ -1,13 +1,13 @@
 error[E0599]: no method named `build` found for struct `CrystalBuilder<LatticeSet, AtomsNotSet>` in the current scope
- --> tests/build_crystal/fail_insufficient_inputs.rs:8:10
-  |
-6 |       let _ = CrystalBuilder::new()
-  |  _____________-
-7 | |         .with_lattice(lattice)
-8 | |         .build()
-  | |         -^^^^^ method not found in `CrystalBuilder<LatticeSet, AtomsNotSet>`
-  | |_________|
-  |
-  |
-  = note: the method was found for
-          - `CrystalBuilder<LatticeSet, AtomsSet>`
+  --> tests/build_crystal/fail_insufficient_inputs.rs:12:10
+   |
+10 |       let _ = CrystalBuilder::new()
+   |  _____________-
+11 | |         .with_lattice(lattice)
+12 | |         .build()
+   | |         -^^^^^ method not found in `CrystalBuilder<LatticeSet, AtomsNotSet>`
+   | |_________|
+   |
+   |
+   = note: the method was found for
+           - `CrystalBuilder<LatticeSet, AtomsSet>`

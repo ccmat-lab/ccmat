@@ -91,7 +91,7 @@ macro_rules! __vec3_angstrom {
 ///
 /// # Example
 /// ```
-/// use commat::{lattice_angstrom, Lattice};
+/// use commat::{lattice_angstrom, Lattice, Angstrom};
 ///
 /// let latt = lattice_angstrom!(
 ///     a = [2.5, 0.0, 0.0],
@@ -153,7 +153,11 @@ pub struct AtomsNotSet;
 /// ```
 /// use commat::*;
 ///
-/// let lattice = Lattice::default();
+/// let lattice = lattice_angstrom![
+///     a = (1.0, 0.0, 0.0),
+///     b = (0.0, 1.0, 0.0),
+///     c = (0.0, 0.0, 1.0),
+/// ];
 /// let atoms = vec![];
 /// let crystal = CrystalBuilder::new()
 ///     .with_lattice(lattice)
@@ -295,11 +299,9 @@ mod tests {
         let _ = lattice_angstrom![[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
     }
 
-    // #[test]
-    // fn build_crystal_compile_error() {
-    //     let t = trybuild::TestCases::new();
-    //     t.compile_fail("tests/build_crystal/fail_*.rs");
-    //
-    //     t.pass("tests/build_crystal/pass_*.rs");
-    // }
+    #[test]
+    fn build_crystal_compile_error() {
+        let t = trybuild::TestCases::new();
+        t.compile_fail("tests/build_crystal/fail_*.rs");
+    }
 }

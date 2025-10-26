@@ -1,14 +1,14 @@
 error[E0599]: no method named `with_atoms` found for struct `CrystalBuilder<LatticeSet, AtomsSet>` in the current scope
- --> tests/build_crystal/fail_duplicate_with_atoms.rs:9:10
-  |
-6 |       let _ = CrystalBuilder::new()
-  |  _____________-
-7 | |         .with_lattice(lattice)
-8 | |         .with_atoms(&atoms)
-9 | |         .with_atoms(&atoms)
-  | |         -^^^^^^^^^^ method not found in `CrystalBuilder<LatticeSet, AtomsSet>`
-  | |_________|
-  |
-  |
-  = note: the method was found for
-          - `CrystalBuilder<L, AtomsNotSet>`
+  --> tests/build_crystal/fail_duplicate_with_atoms.rs:13:10
+   |
+10 |       let _ = CrystalBuilder::new()
+   |  _____________-
+11 | |         .with_lattice(lattice)
+12 | |         .with_atoms(&atoms)
+13 | |         .with_atoms(&atoms)
+   | |         -^^^^^^^^^^ method not found in `CrystalBuilder<LatticeSet, AtomsSet>`
+   | |_________|
+   |
+   |
+   = note: the method was found for
+           - `CrystalBuilder<L, AtomsNotSet>`
