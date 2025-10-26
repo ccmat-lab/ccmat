@@ -9,6 +9,10 @@ repository = "https://github.com/ccmat-lab/ccmat"
 homepage = "https://github.com/ccmat-lab/ccmat"
 license = "MIT OR Apache-2.0"
 keywords = ["science", "crystar", "material", "molecule"]
+exclude = [
+    "misc/*",
+    "python/*",
+]
 
 [dev-dependencies]
 trybuild = "1.0.112"
