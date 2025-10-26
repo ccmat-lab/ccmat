@@ -5,6 +5,15 @@
 /// coords don’t change if lattice changes shape or scale.
 ///
 /// - Use 'lattice'
+///
+/// Compile time build errors include:
+/// - when fractional coordinates x not satisfy 0 <= x < 1.0.
+/// - multi-set of lattice and sites.
+/// - not set lattice or sites.
+///
+/// Following errors or runtime validation.
+/// - exact duplicate sites (? this might be suitable as compile time error, but how?)
+/// - lattice vectors on the same plane
 
 // TODO: naming convention for vars, check IUCr or cif specification
 // Give a table to compare in between different popular tools.
@@ -15,14 +24,53 @@ pub struct Angstrom(pub f64);
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Bohr(pub f64);
 
-// // FracCoord [0.0, 1.0) and only used internally for site position.
-// // TODO: internally I need to check the Frac is valid in between 0.0~1.0
-// #[derive(Debug, Clone, Copy, PartialEq)]
-// struct FracCoord(f64);
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FracCoord(pub f64);
+
+/// `frac!` macro to create `FracCoord` and validate the value is in between [0.0, 1.0)
+/// at compile time.
+#[macro_export]
+macro_rules! frac {
+    ($x:expr) => {{
+        let frac_coord = $crate::FracCoord($x);
+        const {
+            assert!(
+                (0.0 <= $x && $x < 1.0),
+                "invalid fractional coordinate: must satisfy 0.0 <= x < 1.0"
+            );
+        }
+        frac_coord
+    }};
+}
+
+#[macro_export]
+macro_rules! sites_frac_coord {
+    () => {
+        Vec::new()
+    };
+    ( $(
+        ($x:expr,$y:expr,$z:expr), $kind:expr
+      );+ $(;)?
+    ) => {{
+        let sites = vec![
+            $(
+                $crate::Site::new(
+                    [
+                        $crate::frac!($x),
+                        $crate::frac!($y),
+                        $crate::frac!($z),
+                    ],
+                    $kind,
+                )
+            ),+
+        ];
+        sites
+    }};
+}
 
 /// Lattice
 /// inner data structure of the struct are private.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Lattice {
     a: [Angstrom; 3],
     b: [Angstrom; 3],
@@ -159,11 +207,10 @@ impl std::error::Error for CrystalValidateError {}
 
 pub struct LatticeSet;
 pub struct LatticeNotSet;
-pub struct AtomsSet;
-pub struct AtomsNotSet;
+pub struct SitesSet;
+pub struct SitesNotSet;
 
 /// use builder pattern so the validation is runtime
-/// To make it a compile time check, I can use the proc macro (`build`/`build_unchcek` API).
 ///
 /// # Example
 /// ```
@@ -174,35 +221,35 @@ pub struct AtomsNotSet;
 ///     b = (0.0, 1.0, 0.0),
 ///     c = (0.0, 0.0, 1.0),
 /// ];
-/// let atoms = vec![];
+/// let sites = vec![];
 /// let crystal = CrystalBuilder::new()
-///     .with_lattice(lattice)
-///     .with_atoms(&atoms)
+///     .with_lattice(&lattice)
+///     .with_sites(&sites)
 ///     .build()
 ///     .unwrap();
 /// ```
 #[derive(Debug)]
-pub struct CrystalBuilder<LatticeState, AtomsState> {
+pub struct CrystalBuilder<LatticeSetState, SiteSetState> {
     crystal: Crystal,
-    _lattice: std::marker::PhantomData<LatticeState>,
-    _atoms: std::marker::PhantomData<AtomsState>,
+    _lattice: std::marker::PhantomData<LatticeSetState>,
+    _sites: std::marker::PhantomData<SiteSetState>,
 }
 
-impl Default for CrystalBuilder<LatticeNotSet, AtomsNotSet> {
+impl Default for CrystalBuilder<LatticeNotSet, SitesNotSet> {
     fn default() -> Self {
         Self {
             crystal: Crystal {
                 lattice: lattice_angstrom!([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0],),
                 positions: vec![],
-                kinds: vec![],
+                species: vec![],
             },
             _lattice: std::marker::PhantomData,
-            _atoms: std::marker::PhantomData,
+            _sites: std::marker::PhantomData,
         }
     }
 }
 
-impl CrystalBuilder<LatticeNotSet, AtomsNotSet> {
+impl CrystalBuilder<LatticeNotSet, SitesNotSet> {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -212,68 +259,95 @@ impl CrystalBuilder<LatticeNotSet, AtomsNotSet> {
 impl<A> CrystalBuilder<LatticeNotSet, A> {
     // TODO: should Lattice pass as ref?
     #[must_use]
-    pub fn with_lattice(self, lattice: Lattice) -> CrystalBuilder<LatticeSet, A> {
+    pub fn with_lattice(self, lattice: &Lattice) -> CrystalBuilder<LatticeSet, A> {
         CrystalBuilder {
             crystal: Crystal {
-                lattice,
+                lattice: lattice.clone(),
                 ..self.crystal
             },
             _lattice: std::marker::PhantomData,
-            _atoms: std::marker::PhantomData,
+            _sites: std::marker::PhantomData,
         }
     }
 }
 
-impl<L> CrystalBuilder<L, AtomsNotSet> {
+impl<L> CrystalBuilder<L, SitesNotSet> {
     #[must_use]
-    pub fn with_atoms(self, atoms: &[Atom]) -> CrystalBuilder<L, AtomsSet> {
-        let (positions, kinds) = atoms
+    pub fn with_sites(self, sites: &[Site]) -> CrystalBuilder<L, SitesSet> {
+        let (positions, species) = sites
             .iter()
-            .map(|atom| (atom.position, atom.kind))
+            .map(|atom| (atom.position, atom.specie.clone()))
             .collect();
 
         CrystalBuilder {
             crystal: Crystal {
                 positions,
-                kinds,
+                species,
                 ..self.crystal
             },
             _lattice: std::marker::PhantomData,
-            _atoms: std::marker::PhantomData,
+            _sites: std::marker::PhantomData,
         }
     }
 }
 
-impl CrystalBuilder<LatticeSet, AtomsSet> {
-    /// build and validate the it is a valid crystal.
-    /// At the moment only validate the size(positions) == size(numbers)
-    pub fn build(self) -> Result<Crystal, CrystalValidateError> {
+impl CrystalBuilder<LatticeSet, SitesSet> {
+    fn validate(&self) -> Result<(), CrystalValidateError> {
         // TODO: call validate
-        if !self.crystal.positions.len() == self.crystal.kinds.len() {
+        if !self.crystal.positions.len() == self.crystal.species.len() {
             return Err(CrystalValidateError {
                 message: "crystal valid failed".to_string(),
             });
         }
-
-        Ok(self.crystal)
+        Ok(())
     }
 
     // build without runtime validation this is for proc macro which valid in compile time.
-    pub(crate) fn build_uncheck(self) -> Crystal {
+    //
+    // unsafe because there is no validation for the structure.
+    unsafe fn build_uncheck(self) -> Crystal {
         self.crystal
+    }
+
+    /// build and validate the it is a valid crystal.
+    /// At the moment only validate the size(positions) == size(numbers)
+    ///
+    /// # Errors
+    /// ??
+    pub fn build(self) -> Result<Crystal, CrystalValidateError> {
+        self.validate()?;
+
+        let crystal = unsafe { self.build_uncheck() };
+
+        Ok(crystal)
+    }
+}
+
+// TODO: partial occupation on sites
+#[derive(Debug, Clone)]
+struct Specie {
+    atomic_number: u8,
+}
+
+impl Specie {
+    fn new(atomic_number: u8) -> Self {
+        Specie { atomic_number }
     }
 }
 
 #[derive(Debug)]
-pub struct Atom {
-    position: [f64; 3],
-    kind: i32,
+pub struct Site {
+    position: [FracCoord; 3],
+    specie: Specie,
 }
 
-impl Atom {
-    // TODO: kind can be more complex, need a type to hold it.
-    pub fn new(position: [f64; 3], kind: i32) -> Self {
-        Atom { position, kind }
+impl Site {
+    #[must_use]
+    pub fn new(position: [FracCoord; 3], atomic_number: u8) -> Self {
+        Site {
+            position,
+            specie: Specie::new(atomic_number),
+        }
     }
 }
 
@@ -289,13 +363,13 @@ impl Atom {
 #[derive(Debug)]
 pub struct Crystal {
     lattice: Lattice,
-    positions: Vec<[f64; 3]>,
-    kinds: Vec<i32>,
+    positions: Vec<[FracCoord; 3]>,
+    species: Vec<Specie>,
 }
 
 impl Crystal {
     #[must_use]
-    pub fn builder() -> CrystalBuilder<LatticeNotSet, AtomsNotSet> {
+    pub fn builder() -> CrystalBuilder<LatticeNotSet, SitesNotSet> {
         CrystalBuilder::new()
     }
 }
@@ -318,8 +392,17 @@ mod tests {
     }
 
     #[test]
+    fn macro_sites_frac() {
+        let _: Vec<Site> = sites_frac_coord![];
+        let _ = sites_frac_coord![
+            (0.0, 0.0, 0.0), 8;
+            (0.0, 0.0, 0.5), 8;
+        ];
+    }
+
+    #[test]
     fn build_crystal_compile_error() {
         let t = trybuild::TestCases::new();
-        t.compile_fail("tests/build_crystal/fail_*.rs");
+        t.compile_fail("tests/build_crystal/^fail_*.rs");
     }
 }

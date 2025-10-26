@@ -1,3 +1,4 @@
+// NOTE: trybuild didn't able to fail with compile error, same for rust-analyzer, why??
 use ccmat::{lattice_angstrom, sites_frac_coord, CrystalBuilder};
 
 fn main() {
@@ -8,13 +9,11 @@ fn main() {
     ];
     let sites = sites_frac_coord![
         (0.0, 0.0, 0.0), 8;
-        (0.0, 0.0, 0.5), 8;
+        (0.0, 0.0, 1.5), 8; // !error here, 1.5 out of range
     ];
-    let crystal = CrystalBuilder::new()
+    let _ = CrystalBuilder::new()
         .with_lattice(&lattice)
         .with_sites(&sites)
         .build()
         .unwrap();
-
-    dbg!(crystal);
 }
