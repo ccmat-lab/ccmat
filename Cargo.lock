@@ -65,6 +65,7 @@ dependencies = [
 name = "ccmat-core"
 version = "0.1.0"
 dependencies = [
+ "log",
  "moyo",
  "nalgebra",
  "trybuild",

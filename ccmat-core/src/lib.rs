@@ -1,4 +1,10 @@
-use moyo::MoyoDataset;
+use log::warn;
+use std::{borrow::Cow, collections::HashMap};
+
+use moyo::{
+    self, MoyoDataset,
+    data::{arithmetic_crystal_class_entry, hall_symbol_entry},
+};
 use nalgebra::Vector3;
 
 /// notes:
@@ -27,6 +33,12 @@ pub struct Angstrom(pub f64);
 impl From<Angstrom> for f64 {
     fn from(value: Angstrom) -> Self {
         value.0
+    }
+}
+
+impl From<f64> for Angstrom {
+    fn from(value: f64) -> Self {
+        Angstrom(value)
     }
 }
 
@@ -104,26 +116,86 @@ pub struct Lattice {
     c: [Angstrom; 3],
 }
 
+/// f64 wrapper for radians
+#[derive(Debug)]
+pub struct Rad(f64);
+
+impl From<Rad> for f64 {
+    fn from(value: Rad) -> Self {
+        value.0
+    }
+}
+
+impl From<f64> for Rad {
+    fn from(value: f64) -> Self {
+        Rad(value)
+    }
+}
+
 impl Lattice {
     // TODO: how to use type system to validate the row/column definition or unit?
-    #[must_use]
     pub fn new(a: [Angstrom; 3], b: [Angstrom; 3], c: [Angstrom; 3]) -> Self {
         Lattice { a, b, c }
     }
 
-    #[must_use]
     pub fn a(&self) -> [Angstrom; 3] {
         self.a
     }
 
-    #[must_use]
     pub fn b(&self) -> [Angstrom; 3] {
         self.b
     }
 
-    #[must_use]
     pub fn c(&self) -> [Angstrom; 3] {
         self.c
+    }
+
+    pub fn lattice_params(&self) -> (Angstrom, Angstrom, Angstrom, Rad, Rad, Rad) {
+        let va: [f64; 3] = self.a.map(f64::from);
+        let length_a = f64::sqrt(va[0] * va[0] + va[1] * va[1] + va[2] * va[2]);
+
+        let vb: [f64; 3] = self.b.map(f64::from);
+        let length_b = f64::sqrt(vb[0] * vb[0] + vb[1] * vb[1] + vb[2] * vb[2]);
+
+        let vc: [f64; 3] = self.a.map(f64::from);
+        let length_c = f64::sqrt(vc[0] * vc[0] + vc[1] * vc[1] + vc[2] * vc[2]);
+
+        let cos_alpha = (vb[0] * vc[0] + vb[1] * vc[1] + vb[2] * vc[2]) / (length_b * length_c);
+        let cos_beta = (va[0] * vc[0] + va[1] * vc[1] + va[2] * vc[2]) / (length_a * length_c);
+        let cos_gamma = (va[0] * vb[0] + va[1] * vb[1] + va[2] * vb[2]) / (length_a * length_b);
+
+        (
+            length_a.into(),
+            length_b.into(),
+            length_c.into(),
+            cos_alpha.acos().into(),
+            cos_beta.acos().into(),
+            cos_gamma.acos().into(),
+        )
+    }
+
+    pub fn length_a(&self) -> Angstrom {
+        self.lattice_params().0
+    }
+
+    pub fn length_b(&self) -> Angstrom {
+        self.lattice_params().1
+    }
+
+    pub fn length_c(&self) -> Angstrom {
+        self.lattice_params().2
+    }
+
+    fn rad_alpha(&self) -> Rad {
+        self.lattice_params().3
+    }
+
+    fn rad_beta(&self) -> Rad {
+        self.lattice_params().3
+    }
+
+    fn rad_gamma(&self) -> Rad {
+        self.lattice_params().3
     }
 }
 
@@ -398,6 +470,11 @@ impl Crystal {
     pub fn builder() -> CrystalBuilder<LatticeNotSet, SitesNotSet> {
         CrystalBuilder::new()
     }
+
+    pub fn lattice(&self) -> Lattice {
+        // TODO: Cow??
+        self.lattice.clone()
+    }
 }
 
 // The reference version not provide, since the moyo::Cell only used internally thus
@@ -468,13 +545,110 @@ impl From<Crystal> for moyo::base::Cell {
     }
 }
 
-pub fn find_primitive_hpkot(crystal: &Crystal) -> Crystal {
-    todo!()
-}
-
 /// Wrapper of `MoyoDataset` with handy APIs.
 pub struct SymmetryInfo {
     inner: MoyoDataset,
+}
+
+#[allow(non_camel_case_types)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum BravaisClass {
+    // Triclinic
+    aP,
+    // Monoclinic
+    mP,
+    mC,
+    // Orthorhombic
+    oP,
+    oS,
+    oF,
+    oI,
+    // Tetragonal
+    tP,
+    tI,
+    // Rhombohedral
+    hR,
+    // Hexagonal
+    hP,
+    // Cubic
+    cP,
+    cF,
+    cI,
+}
+
+impl From<moyo::data::BravaisClass> for BravaisClass {
+    fn from(bv: moyo::data::BravaisClass) -> Self {
+        match bv {
+            moyo::data::BravaisClass::aP => BravaisClass::aP,
+            moyo::data::BravaisClass::mP => BravaisClass::mP,
+            moyo::data::BravaisClass::mC => BravaisClass::mC,
+            moyo::data::BravaisClass::oP => BravaisClass::oP,
+            moyo::data::BravaisClass::oS => BravaisClass::oS,
+            moyo::data::BravaisClass::oF => BravaisClass::oF,
+            moyo::data::BravaisClass::oI => BravaisClass::oI,
+            moyo::data::BravaisClass::tP => BravaisClass::tP,
+            moyo::data::BravaisClass::tI => BravaisClass::tI,
+            moyo::data::BravaisClass::hR => BravaisClass::hR,
+            moyo::data::BravaisClass::hP => BravaisClass::hP,
+            moyo::data::BravaisClass::cP => BravaisClass::cP,
+            moyo::data::BravaisClass::cF => BravaisClass::cF,
+            moyo::data::BravaisClass::cI => BravaisClass::cI,
+        }
+    }
+}
+
+impl std::fmt::Display for BravaisClass {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            // Triclinic
+            BravaisClass::aP => "aP",
+            // Monoclinic
+            BravaisClass::mP => "mP",
+            BravaisClass::mC => "mC",
+            // Orthorhombic
+            BravaisClass::oP => "oP",
+            BravaisClass::oS => "oS",
+            BravaisClass::oF => "oF",
+            BravaisClass::oI => "oI",
+            // Tetragonal
+            BravaisClass::tP => "tP",
+            BravaisClass::tI => "tI",
+            // Rhombohedral
+            BravaisClass::hR => "hR",
+            // Hexagonal
+            BravaisClass::hP => "hP",
+            // Cubic
+            BravaisClass::cP => "cP",
+            BravaisClass::cF => "cF",
+            BravaisClass::cI => "cI",
+        };
+        write!(f, "{s}")
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub enum Centering {
+    P, // Primitive
+    A, // A-face centered
+    B, // B-face centered
+    C, // C-face centered
+    I, // Body centered
+    R, // Rhombohedral (obverse setting)
+    F, // Face centered
+}
+
+impl From<moyo::data::Centering> for Centering {
+    fn from(c: moyo::data::Centering) -> Self {
+        match c {
+            moyo::data::Centering::P => Centering::P,
+            moyo::data::Centering::A => Centering::A,
+            moyo::data::Centering::B => Centering::B,
+            moyo::data::Centering::C => Centering::C,
+            moyo::data::Centering::I => Centering::I,
+            moyo::data::Centering::R => Centering::R,
+            moyo::data::Centering::F => Centering::F,
+        }
+    }
 }
 
 impl SymmetryInfo {
@@ -490,6 +664,311 @@ impl SymmetryInfo {
             .try_into()
             .expect("spage group number not in 1..=230")
     }
+
+    /// Hall symbol number (1-530).
+    ///
+    /// # Panics
+    /// Panic if hall number return from moyo is negative, i32 -> u32 fail, should be a bug
+    /// then.
+    #[must_use]
+    pub fn hall_number(&self) -> u32 {
+        self.inner
+            .hall_number
+            .try_into()
+            .expect("spage group number not in 1..=230")
+    }
+
+    /// Bravais class
+    ///
+    /// # Panics
+    /// When moyo failed to get the hall symbol from the `hall_number`, shouldn't happened in ccmat
+    /// since the `hall_number` is computed by moyo, if panic it is a bug.
+    #[must_use]
+    pub fn bravais_class(&self) -> BravaisClass {
+        let hall_number = self.inner.hall_number;
+        let hall_symbol =
+            hall_symbol_entry(hall_number).expect("unable to get hall symbol from hall_number");
+        let arithmetic_entry =
+            arithmetic_crystal_class_entry(hall_symbol.arithmetic_number).unwrap();
+
+        arithmetic_entry.bravais_class.into()
+    }
+
+    /// Centering
+    ///
+    /// # Panics
+    /// When moyo failed to get the hall symbol from the `hall_number`, shouldn't happened in ccmat
+    /// since the `hall_number` is computed by moyo, if panic it is a bug.
+    #[must_use]
+    pub fn centring(&self) -> Centering {
+        let hall_number = self.inner.hall_number;
+        let hall_symbol =
+            hall_symbol_entry(hall_number).expect("unable to get hall symbol from hall_number");
+        hall_symbol.centering.into()
+    }
+
+    /// Hall symbol
+    ///
+    /// # Panics
+    /// When moyo failed to get the hall symbol from the `hall_number`, shouldn't happened in ccmat
+    /// since the `hall_number` is computed by moyo, if panic it is a bug.
+    #[must_use]
+    pub fn hall_symbol(&self) -> Cow<'_, str> {
+        let hall_number = self.inner.hall_number;
+        let hall_symbol =
+            hall_symbol_entry(hall_number).expect("unable to get hall symbol from hall_number");
+        Cow::Borrowed(hall_symbol.hall_symbol)
+    }
+
+    /// Check if contain inversion symmetry.
+    #[must_use]
+    pub fn has_inversion(&self) -> bool {
+        let hall_symbol = self.hall_symbol();
+        hall_symbol.starts_with('-')
+    }
+}
+
+// pub fn find_primitive_spglib(
+//     crystal: &Crystal,
+// ) -> Result<(Crystal, PMatrix, InvPMatrix), Box<dyn std::error::Error + Sync + Send>> {
+//     todo!()
+// }
+
+#[allow(non_camel_case_types)]
+#[derive(Debug)]
+enum ExtBravaisClass {
+    cP1,
+    cP2,
+    cF1,
+    cF2,
+    cI1,
+    tP1,
+    tI1,
+    tI2,
+    oP1,
+    oF1,
+    oF2,
+    oF3,
+    oI1,
+    oI2,
+    oI3,
+    oC1,
+    oC2,
+    oA1,
+    oA2,
+    hP1,
+    hP2,
+    hR1,
+    hR2,
+    mP1,
+    mC1,
+    mC2,
+    mC3,
+    aP1, // reserved for aP2 + aP3, ref: hpkot paper (Table 94).
+    aP2,
+    aP3,
+}
+
+#[derive(Debug)]
+pub enum HighSymmetryPoint {
+    Gamma,
+    X,
+    Y,
+}
+
+#[derive(Debug)]
+pub struct KpathInfo {
+    pub path: Vec<HighSymmetryPoint>,
+    // TODO: kPx, kPy, kPz use FracNum type.
+    pub points: HashMap<HighSymmetryPoint, (String, String, String)>,
+    pub kparam: Vec<(String, String)>,
+}
+
+fn find_primitive_hpkot(
+    cell_std: &moyo::base::Cell,
+    symprec: f64,
+) -> Result<moyo::base::Cell, Box<dyn std::error::Error + Send + Sync>> {
+    todo!()
+}
+
+fn compute_path(
+    ext_bravais: &ExtBravaisClass,
+) -> Result<KpathInfo, Box<dyn std::error::Error + Send + Sync>> {
+    todo!()
+}
+
+/// # Errors
+/// ??
+#[allow(clippy::too_many_lines)]
+pub fn find_path(
+    crystal: &Crystal,
+    symprec: f64,
+    threshold: f64,
+) -> Result<(KpathInfo, Crystal), Box<dyn std::error::Error + Send + Sync>> {
+    let syminfo = analyze_symmetry(crystal, symprec)?;
+    let cell_std = syminfo.inner.std_cell.clone();
+    let spg_number = syminfo.spg_number();
+
+    let crystal_priv: Crystal = find_primitive_hpkot(&cell_std, symprec)?.try_into()?;
+    let (a, b, c, alpha, beta, gamma) = crystal_priv.lattice().lattice_params();
+    let a: f64 = a.into();
+    let b: f64 = b.into();
+    let c: f64 = c.into();
+    let alpha: f64 = alpha.into();
+    let beta: f64 = beta.into();
+    let gamma: f64 = gamma.into();
+
+    let ext_bravais = match syminfo.bravais_class() {
+        BravaisClass::aP => todo!(),
+        BravaisClass::mP => ExtBravaisClass::mP1,
+        BravaisClass::mC => {
+            let cosbeta = f64::cos(beta);
+            if f64::abs(b - a * f64::sqrt(1.0 - cosbeta * cosbeta)) < threshold {
+                warn!("mC lattice, but b ~ a*sin(beta)");
+            }
+
+            if b < a * f64::sqrt(1.0 - cosbeta * cosbeta) {
+                ExtBravaisClass::mC1
+            } else {
+                if f64::abs(-a * cosbeta / c + (a * a) * (1.0 - cosbeta * cosbeta) / (b * b) - 1.0)
+                    < threshold
+                {
+                    warn!("mC lattice, but -a*cos(beta)/c + a^2*sin(beta)^2/b^2 ~ 1");
+                }
+
+                if -a * cosbeta / c + (a * a) * (1.0 - cosbeta * cosbeta) / (b * b) < 1.0 {
+                    ExtBravaisClass::mC2
+                } else {
+                    ExtBravaisClass::mC3
+                }
+            }
+        }
+        BravaisClass::oP => ExtBravaisClass::oP1,
+        BravaisClass::oS => match spg_number {
+            // oA
+            x if (38..=41).contains(&x) => {
+                if f64::abs(b - c) < threshold {
+                    warn!("oA lattice, but b ~ c");
+                }
+                if b < c {
+                    ExtBravaisClass::oA1
+                } else {
+                    ExtBravaisClass::oA2
+                }
+            }
+            // oC
+            x if (20..=21).contains(&x) || (35..=37).contains(&x) || (63..=68).contains(&x) => {
+                if f64::abs(b - a) < threshold {
+                    warn!("oC lattice, but a ~ b");
+                }
+                if a < b {
+                    ExtBravaisClass::oC1
+                } else {
+                    ExtBravaisClass::oC2
+                }
+            }
+            _ => unreachable!("oS bravais lattice spacegroup number in wrong range"),
+        },
+        BravaisClass::oF => {
+            if f64::abs((1.0 / a * a) - ((1.0 / b * b) + (1.0 / c * c))) < threshold {
+                warn!("oF lattice, but 1/a^2 ~ 1/b^2 + 1/c^2");
+            }
+            if f64::abs((1.0 / c * c) - ((1.0 / a * a) + (1.0 / b * b))) < threshold {
+                warn!("oF lattice, but 1/c^2 ~ 1/a^2 + 1/b^2");
+            }
+            if 1.0 / a * a > (1.0 / b * b) + (1.0 / c * c) {
+                ExtBravaisClass::oF1
+            } else if 1.0 / c * c > (1.0 / a * a) + (1.0 / b * b) {
+                ExtBravaisClass::oF2
+            } else {
+                ExtBravaisClass::oF3
+            }
+        }
+        BravaisClass::oI => {
+            #[derive(Debug)]
+            enum Face {
+                A, // oI2
+                B, // oI3
+                C, // oI1
+            }
+            impl std::fmt::Display for Face {
+                fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                    match self {
+                        Face::A => write!(f, "A"),
+                        Face::B => write!(f, "B"),
+                        Face::C => write!(f, "C"),
+                    }
+                }
+            }
+
+            let mut vec = vec![(a, Face::A), (b, Face::B), (c, Face::C)];
+            vec.sort_by(|x, y| {
+                y.0.partial_cmp(&x.0)
+                    .expect("lattice length compare impossible to be NaN")
+            });
+
+            if f64::abs(vec[0].0 - vec[1].0) < threshold {
+                warn!(
+                    "oI lattice, but the two longest vectors {} and {} have almost the same length",
+                    vec[0].1, vec[1].1,
+                );
+            }
+            match vec[1].1 {
+                Face::A => ExtBravaisClass::oI2,
+                Face::B => ExtBravaisClass::oI3,
+                Face::C => ExtBravaisClass::oI1,
+            }
+        }
+        BravaisClass::tP => ExtBravaisClass::tP1,
+        BravaisClass::tI => {
+            if (a - c).abs() < threshold {
+                warn!("tI lattice, but a ~ c");
+            }
+
+            if c < a {
+                ExtBravaisClass::tI1
+            } else {
+                ExtBravaisClass::tI2
+            }
+        }
+        BravaisClass::hR => {
+            if f64::abs(f64::sqrt(3.0) * a - f64::sqrt(2.0) * c) < threshold {
+                warn!("hR lattice, but sqrt(3)a almost equal to sqrt(2)c");
+            }
+            if f64::sqrt(3.0) * a < f64::sqrt(2.0) * c {
+                ExtBravaisClass::hR1
+            } else {
+                ExtBravaisClass::hR2
+            }
+        }
+        BravaisClass::hP => {
+            // 143..=163 without 150, 152, 154..=156.
+            if [
+                143, 144, 145, 146, 147, 148, 149, 151, 153, 157, 159, 160, 161, 162, 163,
+            ]
+            .contains(&spg_number)
+            {
+                ExtBravaisClass::hP1
+            } else {
+                ExtBravaisClass::hP2
+            }
+        }
+        BravaisClass::cP => match spg_number {
+            x if (195..=206).contains(&x) => ExtBravaisClass::cP1,
+            x if (207..=230).contains(&x) => ExtBravaisClass::cP2,
+            _ => unreachable!("cP bravais lattice spacegroup number in wrong range"),
+        },
+        BravaisClass::cF => match spg_number {
+            x if (195..=206).contains(&x) => ExtBravaisClass::cF1,
+            x if (207..=230).contains(&x) => ExtBravaisClass::cF2,
+            _ => unreachable!("cF bravais lattice spacegroup number in wrong range"),
+        },
+        BravaisClass::cI => ExtBravaisClass::cI1,
+    };
+
+    let path_info = compute_path(&ext_bravais)?;
+
+    Ok((path_info, crystal_priv))
 }
 
 // TODO: move to ccmat-moyo and add wrapper for MagneticMoyoDataset, and PR to moyo to integrate.
@@ -560,6 +1039,7 @@ mod tests {
             .unwrap();
 
         let syminfo = analyze_symmetry(&crystal, 1e-4).unwrap();
+        assert_eq!(syminfo.spg_number(), 136);
         assert_eq!(syminfo.spg_number(), 136);
     }
 
