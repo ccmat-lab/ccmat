@@ -1,11 +1,18 @@
+mod path_data;
+
+pub use path_data::HighSymmetryPoint;
+
 use log::warn;
-use std::{borrow::Cow, collections::HashMap};
+use std::borrow::Cow;
 
 use moyo::{
-    self, MoyoDataset,
+    self,
     data::{arithmetic_crystal_class_entry, hall_symbol_entry},
+    MoyoDataset,
 };
 use nalgebra::Vector3;
+
+use crate::path_data::{eval_path, lookup_path, KpathInfo};
 
 /// notes:
 /// Operation safety is guranteed by the type.
@@ -54,6 +61,12 @@ impl From<Bohr> for f64 {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FracCoord(pub f64);
 
+impl std::fmt::Display for FracCoord {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:15.9}", self.0)
+    }
+}
+
 impl From<FracCoord> for f64 {
     fn from(value: FracCoord) -> Self {
         value.0
@@ -82,6 +95,18 @@ macro_rules! frac {
     }};
 }
 
+/// macro to set the sites
+///
+/// # Examples
+///
+/// ```
+/// use ccmat_core::sites_frac_coord;
+///
+/// let _ = sites_frac_coord![
+///     (0.0, 0.0, 0.0), 8;
+///     (0.0, 0.0, 0.5), 8;
+/// ];
+/// ```
 #[macro_export]
 macro_rules! sites_frac_coord {
     () => {
@@ -109,6 +134,7 @@ macro_rules! sites_frac_coord {
 
 /// Lattice
 /// inner data structure of the struct are private.
+/// TODO: this can derive Copy
 #[derive(Debug, Clone)]
 pub struct Lattice {
     a: [Angstrom; 3],
@@ -117,7 +143,7 @@ pub struct Lattice {
 }
 
 /// f64 wrapper for radians
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct Rad(f64);
 
 impl From<Rad> for f64 {
@@ -134,18 +160,22 @@ impl From<f64> for Rad {
 
 impl Lattice {
     // TODO: how to use type system to validate the row/column definition or unit?
+    #[must_use]
     pub fn new(a: [Angstrom; 3], b: [Angstrom; 3], c: [Angstrom; 3]) -> Self {
         Lattice { a, b, c }
     }
 
+    #[must_use]
     pub fn a(&self) -> [Angstrom; 3] {
         self.a
     }
 
+    #[must_use]
     pub fn b(&self) -> [Angstrom; 3] {
         self.b
     }
 
+    #[must_use]
     pub fn c(&self) -> [Angstrom; 3] {
         self.c
     }
@@ -174,28 +204,34 @@ impl Lattice {
         )
     }
 
+    #[must_use]
     pub fn length_a(&self) -> Angstrom {
         self.lattice_params().0
     }
 
+    #[must_use]
     pub fn length_b(&self) -> Angstrom {
         self.lattice_params().1
     }
 
+    #[must_use]
     pub fn length_c(&self) -> Angstrom {
         self.lattice_params().2
     }
 
+    #[must_use]
     fn rad_alpha(&self) -> Rad {
         self.lattice_params().3
     }
 
+    #[must_use]
     fn rad_beta(&self) -> Rad {
-        self.lattice_params().3
+        self.lattice_params().4
     }
 
+    #[must_use]
     fn rad_gamma(&self) -> Rad {
-        self.lattice_params().3
+        self.lattice_params().5
     }
 }
 
@@ -282,7 +318,7 @@ macro_rules! lattice_angstrom {
         $b:tt,
         $c:tt $(,)?
     ) => {{
-        let lattice = Lattice::new(
+        let lattice = $crate::Lattice::new(
             $crate::__vec3_angstrom!($a),
             $crate::__vec3_angstrom!($b),
             $crate::__vec3_angstrom!($c),
@@ -471,6 +507,7 @@ impl Crystal {
         CrystalBuilder::new()
     }
 
+    #[must_use]
     pub fn lattice(&self) -> Lattice {
         // TODO: Cow??
         self.lattice.clone()
@@ -736,52 +773,44 @@ impl SymmetryInfo {
 
 #[allow(non_camel_case_types)]
 #[derive(Debug)]
-enum ExtBravaisClass {
-    cP1,
-    cP2,
-    cF1,
-    cF2,
-    cI1,
-    tP1,
-    tI1,
-    tI2,
+pub enum ExtBravaisClass {
+    // Triclinic
+    aP1, // reserved for aP2 + aP3, ref: hpkot paper (Table 94).
+    aP2,
+    aP3,
+    // Monoclinic
+    mP1,
+    mC1,
+    mC2,
+    mC3,
+    // Orthorhombic
     oP1,
+    oA1,
+    oA2,
+    oC1,
+    oC2,
     oF1,
     oF2,
     oF3,
     oI1,
     oI2,
     oI3,
-    oC1,
-    oC2,
-    oA1,
-    oA2,
-    hP1,
-    hP2,
+    // Tetragonal
+    tP1,
+    tI1,
+    tI2,
+    // Rhombohedral
     hR1,
     hR2,
-    mP1,
-    mC1,
-    mC2,
-    mC3,
-    aP1, // reserved for aP2 + aP3, ref: hpkot paper (Table 94).
-    aP2,
-    aP3,
-}
-
-#[derive(Debug)]
-pub enum HighSymmetryPoint {
-    Gamma,
-    X,
-    Y,
-}
-
-#[derive(Debug)]
-pub struct KpathInfo {
-    pub path: Vec<HighSymmetryPoint>,
-    // TODO: kPx, kPy, kPz use FracNum type.
-    pub points: HashMap<HighSymmetryPoint, (String, String, String)>,
-    pub kparam: Vec<(String, String)>,
+    // Hexagonal
+    hP1,
+    hP2,
+    // Cubic
+    cP1,
+    cP2,
+    cF1,
+    cF2,
+    cI1,
 }
 
 fn find_primitive_hpkot(
@@ -791,26 +820,24 @@ fn find_primitive_hpkot(
     todo!()
 }
 
-fn compute_path(
-    ext_bravais: &ExtBravaisClass,
-) -> Result<KpathInfo, Box<dyn std::error::Error + Send + Sync>> {
-    todo!()
-}
-
 /// # Errors
+/// ??
+///
+/// # Panics
 /// ??
 #[allow(clippy::too_many_lines)]
 pub fn find_path(
     crystal: &Crystal,
     symprec: f64,
     threshold: f64,
-) -> Result<(KpathInfo, Crystal), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<(&'static KpathInfo, Crystal), Box<dyn std::error::Error + Send + Sync>> {
     let syminfo = analyze_symmetry(crystal, symprec)?;
     let cell_std = syminfo.inner.std_cell.clone();
     let spg_number = syminfo.spg_number();
 
     let crystal_priv: Crystal = find_primitive_hpkot(&cell_std, symprec)?.try_into()?;
-    let (a, b, c, alpha, beta, gamma) = crystal_priv.lattice().lattice_params();
+    let lattice_params = crystal_priv.lattice().lattice_params();
+    let (a, b, c, alpha, beta, gamma) = lattice_params;
     let a: f64 = a.into();
     let b: f64 = b.into();
     let c: f64 = c.into();
@@ -966,7 +993,8 @@ pub fn find_path(
         BravaisClass::cI => ExtBravaisClass::cI1,
     };
 
-    let path_info = compute_path(&ext_bravais)?;
+    let path_info = lookup_path(&ext_bravais);
+    let path_eval = eval_path(path_info, lattice_params);
 
     Ok((path_info, crystal_priv))
 }

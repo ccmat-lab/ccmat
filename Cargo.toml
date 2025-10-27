@@ -3,10 +3,9 @@ resolver = "3"
 members = [ "ccmat","ccmat-core", "ccmat-kspace"]
 
 [workspace.package]
-name = "ccmat"
 version = "0.1.0"
 description = "blob for every crates relate to ccmat utils, and crates."
-edition = "2024"
+edition = "2021"
 authors = ["Jusong Yu <jusong.d.yu@gmail.com>"]
 readme = "README.md"
 repository = "https://github.com/ccmat-lab/ccmat"

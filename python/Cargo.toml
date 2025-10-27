@@ -1,7 +1,7 @@
 [package]
 name = "ccmatpy"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 authors = ["Jusong Yu <jusong.d.yu@gmail.com>"]
 homepage = "https://github.com/ccmat-lab/ccmat"
 
