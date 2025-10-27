@@ -1,3 +1,6 @@
+use moyo::MoyoDataset;
+use nalgebra::Vector3;
+
 /// notes:
 /// Operation safety is guranteed by the type.
 /// Use Angstrom as the major internal and default API unit to be consistent with xx/xx.
@@ -21,11 +24,35 @@
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Angstrom(pub f64);
 
+impl From<Angstrom> for f64 {
+    fn from(value: Angstrom) -> Self {
+        value.0
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Bohr(pub f64);
 
+impl From<Bohr> for f64 {
+    fn from(value: Bohr) -> Self {
+        value.0
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FracCoord(pub f64);
+
+impl From<FracCoord> for f64 {
+    fn from(value: FracCoord) -> Self {
+        value.0
+    }
+}
+
+impl From<f64> for FracCoord {
+    fn from(value: f64) -> Self {
+        FracCoord(value)
+    }
+}
 
 /// `frac!` macro to create `FracCoord` and validate the value is in between [0.0, 1.0)
 /// at compile time.
@@ -373,6 +400,116 @@ impl Crystal {
     }
 }
 
+// The reference version not provide, since the moyo::Cell only used internally thus
+// assume no need to hold its ownership.
+impl TryFrom<moyo::base::Cell> for Crystal {
+    type Error = Box<dyn std::error::Error + Sync + Send>;
+
+    fn try_from(s: moyo::base::Cell) -> Result<Self, Self::Error> {
+        // TODO: suggest API to get every basis in ccmat-moyo
+        let a = s.lattice.basis.column(0);
+        let b = s.lattice.basis.column(1);
+        let c = s.lattice.basis.column(2);
+
+        let lattice = lattice_angstrom![
+            a = (a[0], a[1], a[2]),
+            b = (b[0], b[1], b[2]),
+            c = (c[0], c[1], c[2]),
+        ];
+
+        let positions = s.positions;
+        let numbers = s.numbers;
+
+        // Length are guranteed to be the same because the moyo::Cell is constructed from ccmat
+        // use `into_iter` to move and avoid allocation.
+        let sites: Vec<Site> = positions
+            .into_iter()
+            .zip(numbers)
+            .map(|(pos, num)| {
+                let pos: [FracCoord; 3] = [pos[0].into(), pos[1].into(), pos[2].into()];
+                let num: u8 = num.try_into().expect("atomic number not in 0..128");
+                Site::new(pos, num)
+            })
+            .collect();
+
+        let c = CrystalBuilder::new()
+            .with_lattice(&lattice)
+            .with_sites(&sites)
+            .build()?;
+        Ok(c)
+    }
+}
+
+// TODO: pr to moyo ask for a constructor API, experiment it in ccmat-moyo first.
+impl From<&Crystal> for moyo::base::Cell {
+    fn from(s: &Crystal) -> Self {
+        let a = s.lattice.a().map(f64::from);
+        let b = s.lattice.b().map(f64::from);
+        let c = s.lattice.c().map(f64::from);
+        let lattice = moyo::base::Lattice::from_basis([a, b, c]);
+
+        // TODO: moyo need an api or macro to create positions.
+        let positions = s
+            .positions
+            .iter()
+            .map(|p| Vector3::new(p[0].into(), p[1].into(), p[2].into()))
+            .collect();
+
+        let numbers = s.species.iter().map(|s| s.atomic_number.into()).collect();
+
+        moyo::base::Cell::new(lattice, positions, numbers)
+    }
+}
+
+// If willing to give the ownership.
+impl From<Crystal> for moyo::base::Cell {
+    fn from(s: Crystal) -> Self {
+        (&s).into()
+    }
+}
+
+pub fn find_primitive_hpkot(crystal: &Crystal) -> Crystal {
+    todo!()
+}
+
+/// Wrapper of `MoyoDataset` with handy APIs.
+pub struct SymmetryInfo {
+    inner: MoyoDataset,
+}
+
+impl SymmetryInfo {
+    /// Space group number (1-230)
+    ///
+    /// # Panics
+    /// Panic if space group number return from moyo is negative, i32 -> u32 fail, should be a bug
+    /// then.
+    #[must_use]
+    pub fn spg_number(&self) -> u32 {
+        self.inner
+            .number
+            .try_into()
+            .expect("spage group number not in 1..=230")
+    }
+}
+
+// TODO: move to ccmat-moyo and add wrapper for MagneticMoyoDataset, and PR to moyo to integrate.
+// It can be generic over Mag/nonmag dataset.
+
+/// analyze symmetry
+///
+/// # Errors
+/// ???
+// TODO: thiserror
+pub fn analyze_symmetry(
+    crystal: &Crystal,
+    symprec: f64,
+) -> Result<SymmetryInfo, Box<dyn std::error::Error + Send + Sync>> {
+    let cell: moyo::base::Cell = crystal.into();
+    let sym_info = MoyoDataset::with_default(&cell, symprec)?;
+    let sym_info = SymmetryInfo { inner: sym_info };
+    Ok(sym_info)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -397,6 +534,33 @@ mod tests {
             (0.0, 0.0, 0.0), 8;
             (0.0, 0.0, 0.5), 8;
         ];
+    }
+
+    #[test]
+    fn moyo_spg() {
+        const X_4F: f64 = 0.3046;
+
+        let lattice = lattice_angstrom![
+            a = (4.603, 0.0, 0.0),
+            b = (0.0, 4.603, 0.0),
+            c = (0.0, 0.0, 4.603),
+        ];
+        let sites = sites_frac_coord![
+            (0.0, 0.0, 0.0), 22;               // Ti(2a)
+            (0.5, 0.5, 0.5), 22;               // Ti(2a)
+            (X_4F, X_4F, 0.0), 8;              // O(4f)
+            (1.0 - X_4F, 1.0 - X_4F, 0.0), 8;  // O(4f)
+            (-X_4F + 0.5, X_4F + 0.5, 0.5), 8; // O(4f)
+            (X_4F + 0.5, -X_4F + 0.5, 0.5), 8; // O(4f)
+        ];
+        let crystal = CrystalBuilder::new()
+            .with_lattice(&lattice)
+            .with_sites(&sites)
+            .build()
+            .unwrap();
+
+        let syminfo = analyze_symmetry(&crystal, 1e-4).unwrap();
+        assert_eq!(syminfo.spg_number(), 136);
     }
 
     #[test]
