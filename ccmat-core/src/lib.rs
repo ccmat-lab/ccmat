@@ -1,6 +1,6 @@
 mod path_data;
-
 pub use path_data::HighSymmetryPoint;
+mod atomic;
 
 use log::warn;
 use std::borrow::Cow;
@@ -94,6 +94,13 @@ macro_rules! frac {
         frac_coord
     }};
 }
+
+// #[macro_export]
+// macro_rules! atomic_number {
+//     (I)  => { 53 };
+//     (Cu) => { 29 };
+// }
+
 
 /// macro to set the sites
 ///
