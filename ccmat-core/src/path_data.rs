@@ -7,7 +7,6 @@ use evalexpr::{
 
 use crate::{Angstrom, ExtBravaisClass, FracCoord, Rad};
 
-// TODO: Display?
 #[allow(non_camel_case_types)]
 #[derive(Debug, Hash, Eq, PartialEq)]
 pub enum HighSymmetryPoint {
@@ -99,8 +98,7 @@ pub enum HighSymmetryPoint {
     Z_2,
 }
 
-// pub? in order to be tested against original python impl
-// TODO: move to mod path_data
+// XXX pub? in order to be tested against original python impl
 #[must_use]
 pub fn lookup_path(ext_bravais: &ExtBravaisClass) -> &'static KpathInfo {
     match ext_bravais {
@@ -1400,7 +1398,35 @@ mod tests {
     use super::*;
 
     #[test]
-    fn eval_hR1_noinv() {
+    fn eval_hR1() {
+        // inv
+        let lattice = lattice_angstrom![
+            (3.7622432546763140, 0.0000000000000000, 0.0000000000000000),
+            (-1.8811216273381570, 3.2581982337663353, 0.0000000000000000),
+            (0.0000000000000000, 0.0000000000000000, 13.5138670706735571),
+        ];
+        let sites = sites_frac_coord![
+            (0.6666666666666667, 0.3333333333333333, 0.8333333333333333), atomic_number!(In);
+            (0.3333333333333333, 0.6666666666666666, 0.1666666666666666), atomic_number!(In);
+            (0.0000000000000000, 0.0000000000000000, 0.4999999999999999), atomic_number!(In);
+            (0.0000000000000000, 0.0000000000000000, 0.0000000000000000), atomic_number!(Hg);
+            (0.6666666666666666, 0.3333333333333333, 0.3333333333333333), atomic_number!(Hg);
+            (0.3333333333333333, 0.6666666666666666, 0.6666666666666666), atomic_number!(Hg);
+        ];
+
+        let s = CrystalBuilder::new()
+            .with_lattice(&lattice)
+            .with_sites(&sites)
+            .build()
+            .unwrap();
+
+        let _ = eval_path(
+            lookup_path(&ExtBravaisClass::hR1),
+            s.lattice().lattice_params(),
+        )
+        .unwrap();
+
+        // noinv
         let lattice = lattice_angstrom![
             (4.3089558515497082, 0.0000000000000000, 0.0000000000000000),
             (-2.1544779257748541, 3.7316652312276553, 0.0000000000000000),
@@ -1421,13 +1447,10 @@ mod tests {
             .build()
             .unwrap();
 
-        let path = eval_path(
+        let _ = eval_path(
             lookup_path(&ExtBravaisClass::hR1),
             s.lattice().lattice_params(),
         )
         .unwrap();
-
-        println!("{}", path);
-        // TODO: regression test on path output with display
     }
 }
