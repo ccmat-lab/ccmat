@@ -1,11 +1,12 @@
 #![allow(non_upper_case_globals)]
-
 use evalexpr::{
     eval_float_with_context, ContextWithMutableVariables, DefaultNumericTypes, HashMapContext,
     Value,
 };
 
-use crate::{Angstrom, ExtBravaisClass, FracCoord, Rad};
+use ccmat_core::{Angstrom, FracCoord, Rad};
+
+use crate::ExtBravaisClass;
 
 #[allow(non_camel_case_types)]
 #[derive(Debug, Hash, Eq, PartialEq)]
@@ -100,7 +101,7 @@ pub enum HighSymmetryPoint {
 
 // XXX pub? in order to be tested against original python impl
 #[must_use]
-pub fn lookup_path(ext_bravais: &ExtBravaisClass) -> &'static KpathInfo {
+pub fn lookup(ext_bravais: &ExtBravaisClass) -> &'static KpathInfo {
     match ext_bravais {
         // Triclinic
         ExtBravaisClass::aP1 => unimplemented!("aP1 is reserved for aP2+aP3, check hpkot paper"),
@@ -147,7 +148,7 @@ struct FracCoordExpr(&'static str);
 
 macro_rules! var {
     ($ex:expr) => {
-        $crate::path_data::FracCoordExpr(stringify!($ex))
+        FracCoordExpr(stringify!($ex))
     };
 }
 
@@ -155,7 +156,7 @@ macro_rules! expr {
     ($ex:expr) => {{
         // this is to turn the evaluation always perform as float type.
         let s = concat!("1.0 * ", stringify!($ex));
-        $crate::path_data::FracCoordExpr(s)
+        FracCoordExpr(s)
     }};
 }
 
@@ -263,7 +264,7 @@ impl std::fmt::Display for KpathEval {
     }
 }
 
-pub(crate) fn eval_path(
+pub(crate) fn eval(
     path_info: &KpathInfo,
     lattice_params: (Angstrom, Angstrom, Angstrom, Rad, Rad, Rad),
 ) -> Result<KpathEval, Box<dyn std::error::Error + Send + Sync>> {
@@ -1393,7 +1394,7 @@ pub static INFO_cI1: KpathInfo = KpathInfo {
 )]
 #[cfg(test)]
 mod tests {
-    use crate::{atomic_number, lattice_angstrom, sites_frac_coord, CrystalBuilder};
+    use ccmat_core::{atomic_number, lattice_angstrom, sites_frac_coord, CrystalBuilder};
 
     use super::*;
 
@@ -1420,11 +1421,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let _ = eval_path(
-            lookup_path(&ExtBravaisClass::hR1),
-            s.lattice().lattice_params(),
-        )
-        .unwrap();
+        let _ = eval(lookup(&ExtBravaisClass::hR1), s.lattice().lattice_params()).unwrap();
 
         // noinv
         let lattice = lattice_angstrom![
@@ -1447,10 +1444,6 @@ mod tests {
             .build()
             .unwrap();
 
-        let _ = eval_path(
-            lookup_path(&ExtBravaisClass::hR1),
-            s.lattice().lattice_params(),
-        )
-        .unwrap();
+        let _ = eval(lookup(&ExtBravaisClass::hR1), s.lattice().lattice_params()).unwrap();
     }
 }

@@ -65,8 +65,6 @@ dependencies = [
 name = "ccmat-core"
 version = "0.1.0"
 dependencies = [
- "evalexpr",
- "log",
  "moyo",
  "nalgebra",
  "trybuild",
@@ -75,6 +73,12 @@ dependencies = [
 [[package]]
 name = "ccmat-kspace"
 version = "0.1.0"
+dependencies = [
+ "ccmat-core",
+ "evalexpr",
+ "log",
+ "moyo",
+]
 
 [[package]]
 name = "cfg-if"
