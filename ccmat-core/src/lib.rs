@@ -1,6 +1,9 @@
 mod atomic;
 
-use std::borrow::Cow;
+use std::{
+    borrow::Cow,
+    ops::{Deref, Mul},
+};
 
 use moyo::{
     self,
@@ -41,6 +44,22 @@ impl From<Angstrom> for f64 {
 impl From<f64> for Angstrom {
     fn from(value: f64) -> Self {
         Angstrom(value)
+    }
+}
+
+/// Unit the inverse Angstrom 1/Å for vectors in reciprocal space.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct InvAngstrom(pub f64);
+
+impl From<InvAngstrom> for f64 {
+    fn from(value: InvAngstrom) -> Self {
+        value.0
+    }
+}
+
+impl From<f64> for InvAngstrom {
+    fn from(value: f64) -> Self {
+        InvAngstrom(value)
     }
 }
 
@@ -138,9 +157,9 @@ macro_rules! sites_frac_coord {
 /// TODO: this can derive Copy
 #[derive(Debug, Clone)]
 pub struct Lattice {
-    a: [Angstrom; 3],
-    b: [Angstrom; 3],
-    c: [Angstrom; 3],
+    a: Vec3<Angstrom>,
+    b: Vec3<Angstrom>,
+    c: Vec3<Angstrom>,
 }
 
 /// f64 wrapper for radians
@@ -159,36 +178,102 @@ impl From<f64> for Rad {
     }
 }
 
+// TODO: I should have a proc-macro for impl all such from f64 traits
+
+/// f64 wrapper for value with unit of volume (Angstrom ^ 2)
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct Volume(f64);
+
+impl From<Volume> for f64 {
+    fn from(value: Volume) -> Self {
+        value.0
+    }
+}
+
+impl From<f64> for Volume {
+    fn from(value: f64) -> Self {
+        Volume(value)
+    }
+}
+
+/// dot product
+fn dot(v: &Vec3<f64>, u: &Vec3<f64>) -> f64 {
+    v[0] * u[0] + v[1] * u[1] + v[2] + u[2]
+}
+
+/// cross product
+fn cross(u: &Vec3<f64>, v: &Vec3<f64>) -> Vec3<f64> {
+    Vec3::<f64>([
+        u[1] * v[2] - u[2] * v[1],
+        u[2] * v[0] - u[0] * v[2],
+        u[0] * v[1] - u[1] * v[0],
+    ])
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct Vec3<T>(pub [T; 3]);
+
+impl<T> Deref for Vec3<T> {
+    type Target = [T; 3];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T> std::ops::Index<usize> for Vec3<T> {
+    type Output = T;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.0[index]
+    }
+}
+
+impl Mul<Vec3<f64>> for f64 {
+    type Output = Vec3<f64>;
+
+    fn mul(self, rhs: Vec3<f64>) -> Self::Output {
+        let v = rhs.0.map(f64::from);
+        Vec3::<f64>(v)
+    }
+}
+
+impl From<Vec3<Angstrom>> for Vec3<f64> {
+    fn from(v: Vec3<Angstrom>) -> Self {
+        Vec3::<f64>(v.map(f64::from))
+    }
+}
+
 impl Lattice {
-    // TODO: how to use type system to validate the row/column definition or unit?
+    // TODO: how to use type system to validate the row/column definition?
     #[must_use]
-    pub fn new(a: [Angstrom; 3], b: [Angstrom; 3], c: [Angstrom; 3]) -> Self {
+    pub fn new(a: Vec3<Angstrom>, b: Vec3<Angstrom>, c: Vec3<Angstrom>) -> Self {
         Lattice { a, b, c }
     }
 
     #[must_use]
-    pub fn a(&self) -> [Angstrom; 3] {
+    pub fn a(&self) -> Vec3<Angstrom> {
         self.a
     }
 
     #[must_use]
-    pub fn b(&self) -> [Angstrom; 3] {
+    pub fn b(&self) -> Vec3<Angstrom> {
         self.b
     }
 
     #[must_use]
-    pub fn c(&self) -> [Angstrom; 3] {
+    pub fn c(&self) -> Vec3<Angstrom> {
         self.c
     }
 
     pub fn lattice_params(&self) -> (Angstrom, Angstrom, Angstrom, Rad, Rad, Rad) {
-        let va: [f64; 3] = self.a.map(f64::from);
+        let va = self.a.map(f64::from);
         let length_a = f64::sqrt(va[0] * va[0] + va[1] * va[1] + va[2] * va[2]);
 
-        let vb: [f64; 3] = self.b.map(f64::from);
+        let vb = self.b.map(f64::from);
         let length_b = f64::sqrt(vb[0] * vb[0] + vb[1] * vb[1] + vb[2] * vb[2]);
 
-        let vc: [f64; 3] = self.a.map(f64::from);
+        let vc = self.c.map(f64::from);
         let length_c = f64::sqrt(vc[0] * vc[0] + vc[1] * vc[1] + vc[2] * vc[2]);
 
         let cos_alpha = (vb[0] * vc[0] + vb[1] * vc[1] + vb[2] * vc[2]) / (length_b * length_c);
@@ -221,45 +306,53 @@ impl Lattice {
     }
 
     #[must_use]
-    fn rad_alpha(&self) -> Rad {
+    pub fn rad_alpha(&self) -> Rad {
         self.lattice_params().3
     }
 
     #[must_use]
-    fn rad_beta(&self) -> Rad {
+    pub fn rad_beta(&self) -> Rad {
         self.lattice_params().4
     }
 
     #[must_use]
-    fn rad_gamma(&self) -> Rad {
+    pub fn rad_gamma(&self) -> Rad {
         self.lattice_params().5
+    }
+
+    pub fn volume(&self) -> Volume {
+        let (a, b, c) = (self.a.into(), self.b.into(), self.c.into());
+
+        // a⋅(b×c)
+        Volume(dot(&a, &cross(&b, &c)))
+    }
+
+    #[must_use]
+    pub fn reciprocal_lattice(&self) -> LatticeReciprocal {
+        let (a, b, c) = (self.a.into(), self.b.into(), self.c.into());
+        let volume: f64 = Volume(dot(&a, &cross(&b, &c))).into();
+        let a_star = 1.0 / volume * (2.0 * std::f64::consts::PI) * cross(&b, &c);
+        let b_star = 1.0 / volume * (2.0 * std::f64::consts::PI) * cross(&c, &a);
+        let c_star = 1.0 / volume * (2.0 * std::f64::consts::PI) * cross(&a, &b);
+
+        let a_star = a_star.map(InvAngstrom::from);
+        let b_star = b_star.map(InvAngstrom::from);
+        let c_star = c_star.map(InvAngstrom::from);
+
+        LatticeReciprocal::new(a_star, b_star, c_star)
     }
 }
 
 // TODO: add lattice_bohr!()
 // TODO: impl Display to Lattice for pretty print.
 
-#[macro_export]
-macro_rules! __vec3_angstrom {
-    ([$x:expr, $y:expr, $z:expr]) => {
-        [Angstrom($x), Angstrom($y), Angstrom($z)]
-    };
-    (($x:expr, $y:expr, $z:expr)) => {
-        [
-            $crate::Angstrom($x),
-            $crate::Angstrom($y),
-            $crate::Angstrom($z),
-        ]
-    };
-}
-
 /// Create a [`Lattice`] using vectors expressed in **Ångström** units.
 ///
 /// This macro constructs a [`Lattice`] from three lattice vectors (`a`, `b`, and `c`)
 /// expressed as tuples or arrays of three floating-point numbers.
 ///
-/// - Each component is converted to [`Angstrom`] automatically.
-/// - Both `(x, y, z)` and `[x, y, z]` tuple/array syntax are supported.
+/// - Each component is converted to ``Vec3<Angstrom>`` automatically.
+/// - Both `(x, y, z)` and `[x, y, z]` tuple/array syntax are supported for vector.
 /// - Trailing commas are optional.
 ///
 /// It supports both **named** and **positional** forms:
@@ -290,6 +383,9 @@ macro_rules! __vec3_angstrom {
 /// - None at compile time; this macro expands directly to constructor calls.
 ///
 /// # Example
+///
+/// It is also okay to use '[]' instead of '()' for each vector.
+///
 /// ```
 /// use ccmat_core::{lattice_angstrom, Lattice, Angstrom};
 ///
@@ -307,10 +403,27 @@ macro_rules! lattice_angstrom {
         b = $b:tt,
         c = $c:tt $(,)?
     ) => {{
+        macro_rules! __vec3_angstrom {
+            ([$x:expr, $y:expr, $z:expr]) => {
+                $crate::Vec3::<$crate::Angstrom>([
+                    $crate::Angstrom($x),
+                    $crate::Angstrom($y),
+                    $crate::Angstrom($z),
+                ])
+            };
+            (($x:expr, $y:expr, $z:expr)) => {
+                $crate::Vec3::<$crate::Angstrom>([
+                    $crate::Angstrom($x),
+                    $crate::Angstrom($y),
+                    $crate::Angstrom($z),
+                ])
+            };
+        }
+
         let lattice = $crate::Lattice::new(
-            $crate::__vec3_angstrom!($a),
-            $crate::__vec3_angstrom!($b),
-            $crate::__vec3_angstrom!($c),
+            __vec3_angstrom!($a),
+            __vec3_angstrom!($b),
+            __vec3_angstrom!($c),
         );
         lattice
     }};
@@ -319,13 +432,66 @@ macro_rules! lattice_angstrom {
         $b:tt,
         $c:tt $(,)?
     ) => {{
+        macro_rules! __vec3_angstrom {
+            ([$x:expr, $y:expr, $z:expr]) => {
+                $crate::Vec3::<$crate::Angstrom>([
+                    $crate::Angstrom($x),
+                    $crate::Angstrom($y),
+                    $crate::Angstrom($z),
+                ])
+            };
+            (($x:expr, $y:expr, $z:expr)) => {
+                $crate::Vec3::<$crate::Angstrom>([
+                    $crate::Angstrom($x),
+                    $crate::Angstrom($y),
+                    $crate::Angstrom($z),
+                ])
+            };
+        }
         let lattice = $crate::Lattice::new(
-            $crate::__vec3_angstrom!($a),
-            $crate::__vec3_angstrom!($b),
-            $crate::__vec3_angstrom!($c),
+            __vec3_angstrom!($a),
+            __vec3_angstrom!($b),
+            __vec3_angstrom!($c),
         );
         lattice
     }};
+}
+
+pub struct LatticeReciprocal {
+    // internal use a not a_star, but the API is a_star to make it very explicit.
+    a: [InvAngstrom; 3],
+    b: [InvAngstrom; 3],
+    c: [InvAngstrom; 3],
+}
+
+impl LatticeReciprocal {
+    #[must_use]
+    pub fn new(
+        a_star: [InvAngstrom; 3],
+        b_star: [InvAngstrom; 3],
+        c_star: [InvAngstrom; 3],
+    ) -> Self {
+        LatticeReciprocal {
+            a: a_star,
+            b: b_star,
+            c: c_star,
+        }
+    }
+
+    #[must_use]
+    pub fn a_star(&self) -> [InvAngstrom; 3] {
+        self.a
+    }
+
+    #[must_use]
+    pub fn b_star(&self) -> [InvAngstrom; 3] {
+        self.b
+    }
+
+    #[must_use]
+    pub fn c_star(&self) -> [InvAngstrom; 3] {
+        self.c
+    }
 }
 
 #[derive(Debug)]
@@ -512,6 +678,11 @@ impl Crystal {
     pub fn lattice(&self) -> Lattice {
         // TODO: Cow??
         self.lattice.clone()
+    }
+
+    #[must_use]
+    pub fn volume(&self) -> Volume {
+        self.lattice.volume()
     }
 }
 
@@ -835,12 +1006,12 @@ mod tests {
             c = (0.0, 0.0, 4.603),
         ];
         let sites = sites_frac_coord![
-            (0.0, 0.0, 0.0), 22;               // Ti(2a)
-            (0.5, 0.5, 0.5), 22;               // Ti(2a)
-            (X_4F, X_4F, 0.0), 8;              // O(4f)
-            (1.0 - X_4F, 1.0 - X_4F, 0.0), 8;  // O(4f)
-            (-X_4F + 0.5, X_4F + 0.5, 0.5), 8; // O(4f)
-            (X_4F + 0.5, -X_4F + 0.5, 0.5), 8; // O(4f)
+            (0.0, 0.0, 0.0), atomic_number!(Ti);               // Ti(2a)
+            (0.5, 0.5, 0.5), atomic_number!(Ti);               // Ti(2a)
+            (X_4F, X_4F, 0.0), atomic_number!(O);              // O(4f)
+            (1.0 - X_4F, 1.0 - X_4F, 0.0), atomic_number!(O);  // O(4f)
+            (-X_4F + 0.5, X_4F + 0.5, 0.5), atomic_number!(O); // O(4f)
+            (X_4F + 0.5, -X_4F + 0.5, 0.5), atomic_number!(O); // O(4f)
         ];
         let crystal = CrystalBuilder::new()
             .with_lattice(&lattice)
@@ -848,8 +1019,9 @@ mod tests {
             .build()
             .unwrap();
 
+        assert_eq!(crystal.volume(), Volume(4.603 * 4.603 * 4.603));
+
         let syminfo = analyze_symmetry(&crystal, 1e-4).unwrap();
-        assert_eq!(syminfo.spg_number(), 136);
         assert_eq!(syminfo.spg_number(), 136);
     }
 

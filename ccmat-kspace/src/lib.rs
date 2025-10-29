@@ -3,7 +3,7 @@ mod path;
 use log::warn;
 use ccmat_core::{analyze_symmetry, BravaisClass, Crystal};
 
-use crate::path::KpathInfo;
+use crate::path::{KpathEval, KpathInfo};
 
 fn find_primitive_hpkot(
     cell_std: &Crystal,
@@ -14,7 +14,7 @@ fn find_primitive_hpkot(
 
 #[allow(non_camel_case_types)]
 #[derive(Debug)]
-pub enum ExtBravaisClass {
+pub(crate) enum ExtBravaisClass {
     // Triclinic
     aP1, // reserved for aP2 + aP3, ref: hpkot paper (Table 94).
     aP2,
@@ -64,7 +64,7 @@ pub fn find_path(
     crystal: &Crystal,
     symprec: f64,
     threshold: f64,
-) -> Result<(&'static KpathInfo, Crystal), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<(&'static KpathInfo, KpathEval, Crystal), Box<dyn std::error::Error + Send + Sync>> {
     let syminfo = analyze_symmetry(crystal, symprec)?;
     let cell_std = syminfo.std_cell()?;
     let spg_number = syminfo.spg_number();
@@ -228,7 +228,7 @@ pub fn find_path(
     };
 
     let path_info = path::lookup(&ext_bravais);
-    let path_eval = path::eval(path_info, lattice_params);
+    let path_eval = path::eval(path_info, lattice_params)?;
 
-    Ok((path_info, crystal_priv))
+    Ok((path_info, path_eval, crystal_priv))
 }
