@@ -1,9 +1,11 @@
-use log::warn;
-use std::{borrow::Cow, collections::HashMap};
+mod atomic;
+
+use std::borrow::Cow;
 
 use moyo::{
-    self, MoyoDataset,
+    self,
     data::{arithmetic_crystal_class_entry, hall_symbol_entry},
+    MoyoDataset,
 };
 use nalgebra::Vector3;
 
@@ -54,6 +56,12 @@ impl From<Bohr> for f64 {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FracCoord(pub f64);
 
+impl std::fmt::Display for FracCoord {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:15.9}", self.0)
+    }
+}
+
 impl From<FracCoord> for f64 {
     fn from(value: FracCoord) -> Self {
         value.0
@@ -82,6 +90,24 @@ macro_rules! frac {
     }};
 }
 
+// #[macro_export]
+// macro_rules! atomic_number {
+//     (I)  => { 53 };
+//     (Cu) => { 29 };
+// }
+
+/// macro to set the sites
+///
+/// # Examples
+///
+/// ```
+/// use ccmat_core::sites_frac_coord;
+///
+/// let _ = sites_frac_coord![
+///     (0.0, 0.0, 0.0), 8;
+///     (0.0, 0.0, 0.5), 8;
+/// ];
+/// ```
 #[macro_export]
 macro_rules! sites_frac_coord {
     () => {
@@ -109,6 +135,7 @@ macro_rules! sites_frac_coord {
 
 /// Lattice
 /// inner data structure of the struct are private.
+/// TODO: this can derive Copy
 #[derive(Debug, Clone)]
 pub struct Lattice {
     a: [Angstrom; 3],
@@ -117,7 +144,7 @@ pub struct Lattice {
 }
 
 /// f64 wrapper for radians
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct Rad(f64);
 
 impl From<Rad> for f64 {
@@ -134,18 +161,22 @@ impl From<f64> for Rad {
 
 impl Lattice {
     // TODO: how to use type system to validate the row/column definition or unit?
+    #[must_use]
     pub fn new(a: [Angstrom; 3], b: [Angstrom; 3], c: [Angstrom; 3]) -> Self {
         Lattice { a, b, c }
     }
 
+    #[must_use]
     pub fn a(&self) -> [Angstrom; 3] {
         self.a
     }
 
+    #[must_use]
     pub fn b(&self) -> [Angstrom; 3] {
         self.b
     }
 
+    #[must_use]
     pub fn c(&self) -> [Angstrom; 3] {
         self.c
     }
@@ -174,28 +205,34 @@ impl Lattice {
         )
     }
 
+    #[must_use]
     pub fn length_a(&self) -> Angstrom {
         self.lattice_params().0
     }
 
+    #[must_use]
     pub fn length_b(&self) -> Angstrom {
         self.lattice_params().1
     }
 
+    #[must_use]
     pub fn length_c(&self) -> Angstrom {
         self.lattice_params().2
     }
 
+    #[must_use]
     fn rad_alpha(&self) -> Rad {
         self.lattice_params().3
     }
 
+    #[must_use]
     fn rad_beta(&self) -> Rad {
-        self.lattice_params().3
+        self.lattice_params().4
     }
 
+    #[must_use]
     fn rad_gamma(&self) -> Rad {
-        self.lattice_params().3
+        self.lattice_params().5
     }
 }
 
@@ -282,7 +319,7 @@ macro_rules! lattice_angstrom {
         $b:tt,
         $c:tt $(,)?
     ) => {{
-        let lattice = Lattice::new(
+        let lattice = $crate::Lattice::new(
             $crate::__vec3_angstrom!($a),
             $crate::__vec3_angstrom!($b),
             $crate::__vec3_angstrom!($c),
@@ -471,6 +508,7 @@ impl Crystal {
         CrystalBuilder::new()
     }
 
+    #[must_use]
     pub fn lattice(&self) -> Lattice {
         // TODO: Cow??
         self.lattice.clone()
@@ -529,6 +567,7 @@ impl From<&Crystal> for moyo::base::Cell {
         let positions = s
             .positions
             .iter()
+            // TODO: ccmat-moyo, add an API `position!` for Vector3.
             .map(|p| Vector3::new(p[0].into(), p[1].into(), p[2].into()))
             .collect();
 
@@ -543,11 +582,6 @@ impl From<Crystal> for moyo::base::Cell {
     fn from(s: Crystal) -> Self {
         (&s).into()
     }
-}
-
-/// Wrapper of `MoyoDataset` with handy APIs.
-pub struct SymmetryInfo {
-    inner: MoyoDataset,
 }
 
 #[allow(non_camel_case_types)]
@@ -651,6 +685,11 @@ impl From<moyo::data::Centering> for Centering {
     }
 }
 
+/// Wrapper of `MoyoDataset` with handy APIs.
+pub struct SymmetryInfo {
+    inner: MoyoDataset,
+}
+
 impl SymmetryInfo {
     /// Space group number (1-230)
     ///
@@ -726,6 +765,14 @@ impl SymmetryInfo {
         let hall_symbol = self.hall_symbol();
         hall_symbol.starts_with('-')
     }
+
+    /// Stdandard Cell
+    ///
+    /// # Errors
+    /// ??
+    pub fn std_cell(&self) -> Result<Crystal, Box<dyn std::error::Error + Send + Sync>> {
+        self.inner.std_cell.clone().try_into()
+    }
 }
 
 // pub fn find_primitive_spglib(
@@ -733,243 +780,6 @@ impl SymmetryInfo {
 // ) -> Result<(Crystal, PMatrix, InvPMatrix), Box<dyn std::error::Error + Sync + Send>> {
 //     todo!()
 // }
-
-#[allow(non_camel_case_types)]
-#[derive(Debug)]
-enum ExtBravaisClass {
-    cP1,
-    cP2,
-    cF1,
-    cF2,
-    cI1,
-    tP1,
-    tI1,
-    tI2,
-    oP1,
-    oF1,
-    oF2,
-    oF3,
-    oI1,
-    oI2,
-    oI3,
-    oC1,
-    oC2,
-    oA1,
-    oA2,
-    hP1,
-    hP2,
-    hR1,
-    hR2,
-    mP1,
-    mC1,
-    mC2,
-    mC3,
-    aP1, // reserved for aP2 + aP3, ref: hpkot paper (Table 94).
-    aP2,
-    aP3,
-}
-
-#[derive(Debug)]
-pub enum HighSymmetryPoint {
-    Gamma,
-    X,
-    Y,
-}
-
-#[derive(Debug)]
-pub struct KpathInfo {
-    pub path: Vec<HighSymmetryPoint>,
-    // TODO: kPx, kPy, kPz use FracNum type.
-    pub points: HashMap<HighSymmetryPoint, (String, String, String)>,
-    pub kparam: Vec<(String, String)>,
-}
-
-fn find_primitive_hpkot(
-    cell_std: &moyo::base::Cell,
-    symprec: f64,
-) -> Result<moyo::base::Cell, Box<dyn std::error::Error + Send + Sync>> {
-    todo!()
-}
-
-fn compute_path(
-    ext_bravais: &ExtBravaisClass,
-) -> Result<KpathInfo, Box<dyn std::error::Error + Send + Sync>> {
-    todo!()
-}
-
-/// # Errors
-/// ??
-#[allow(clippy::too_many_lines)]
-pub fn find_path(
-    crystal: &Crystal,
-    symprec: f64,
-    threshold: f64,
-) -> Result<(KpathInfo, Crystal), Box<dyn std::error::Error + Send + Sync>> {
-    let syminfo = analyze_symmetry(crystal, symprec)?;
-    let cell_std = syminfo.inner.std_cell.clone();
-    let spg_number = syminfo.spg_number();
-
-    let crystal_priv: Crystal = find_primitive_hpkot(&cell_std, symprec)?.try_into()?;
-    let (a, b, c, alpha, beta, gamma) = crystal_priv.lattice().lattice_params();
-    let a: f64 = a.into();
-    let b: f64 = b.into();
-    let c: f64 = c.into();
-    let alpha: f64 = alpha.into();
-    let beta: f64 = beta.into();
-    let gamma: f64 = gamma.into();
-
-    let ext_bravais = match syminfo.bravais_class() {
-        BravaisClass::aP => todo!(),
-        BravaisClass::mP => ExtBravaisClass::mP1,
-        BravaisClass::mC => {
-            let cosbeta = f64::cos(beta);
-            if f64::abs(b - a * f64::sqrt(1.0 - cosbeta * cosbeta)) < threshold {
-                warn!("mC lattice, but b ~ a*sin(beta)");
-            }
-
-            if b < a * f64::sqrt(1.0 - cosbeta * cosbeta) {
-                ExtBravaisClass::mC1
-            } else {
-                if f64::abs(-a * cosbeta / c + (a * a) * (1.0 - cosbeta * cosbeta) / (b * b) - 1.0)
-                    < threshold
-                {
-                    warn!("mC lattice, but -a*cos(beta)/c + a^2*sin(beta)^2/b^2 ~ 1");
-                }
-
-                if -a * cosbeta / c + (a * a) * (1.0 - cosbeta * cosbeta) / (b * b) < 1.0 {
-                    ExtBravaisClass::mC2
-                } else {
-                    ExtBravaisClass::mC3
-                }
-            }
-        }
-        BravaisClass::oP => ExtBravaisClass::oP1,
-        BravaisClass::oS => match spg_number {
-            // oA
-            x if (38..=41).contains(&x) => {
-                if f64::abs(b - c) < threshold {
-                    warn!("oA lattice, but b ~ c");
-                }
-                if b < c {
-                    ExtBravaisClass::oA1
-                } else {
-                    ExtBravaisClass::oA2
-                }
-            }
-            // oC
-            x if (20..=21).contains(&x) || (35..=37).contains(&x) || (63..=68).contains(&x) => {
-                if f64::abs(b - a) < threshold {
-                    warn!("oC lattice, but a ~ b");
-                }
-                if a < b {
-                    ExtBravaisClass::oC1
-                } else {
-                    ExtBravaisClass::oC2
-                }
-            }
-            _ => unreachable!("oS bravais lattice spacegroup number in wrong range"),
-        },
-        BravaisClass::oF => {
-            if f64::abs((1.0 / a * a) - ((1.0 / b * b) + (1.0 / c * c))) < threshold {
-                warn!("oF lattice, but 1/a^2 ~ 1/b^2 + 1/c^2");
-            }
-            if f64::abs((1.0 / c * c) - ((1.0 / a * a) + (1.0 / b * b))) < threshold {
-                warn!("oF lattice, but 1/c^2 ~ 1/a^2 + 1/b^2");
-            }
-            if 1.0 / a * a > (1.0 / b * b) + (1.0 / c * c) {
-                ExtBravaisClass::oF1
-            } else if 1.0 / c * c > (1.0 / a * a) + (1.0 / b * b) {
-                ExtBravaisClass::oF2
-            } else {
-                ExtBravaisClass::oF3
-            }
-        }
-        BravaisClass::oI => {
-            #[derive(Debug)]
-            enum Face {
-                A, // oI2
-                B, // oI3
-                C, // oI1
-            }
-            impl std::fmt::Display for Face {
-                fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                    match self {
-                        Face::A => write!(f, "A"),
-                        Face::B => write!(f, "B"),
-                        Face::C => write!(f, "C"),
-                    }
-                }
-            }
-
-            let mut vec = vec![(a, Face::A), (b, Face::B), (c, Face::C)];
-            vec.sort_by(|x, y| {
-                y.0.partial_cmp(&x.0)
-                    .expect("lattice length compare impossible to be NaN")
-            });
-
-            if f64::abs(vec[0].0 - vec[1].0) < threshold {
-                warn!(
-                    "oI lattice, but the two longest vectors {} and {} have almost the same length",
-                    vec[0].1, vec[1].1,
-                );
-            }
-            match vec[1].1 {
-                Face::A => ExtBravaisClass::oI2,
-                Face::B => ExtBravaisClass::oI3,
-                Face::C => ExtBravaisClass::oI1,
-            }
-        }
-        BravaisClass::tP => ExtBravaisClass::tP1,
-        BravaisClass::tI => {
-            if (a - c).abs() < threshold {
-                warn!("tI lattice, but a ~ c");
-            }
-
-            if c < a {
-                ExtBravaisClass::tI1
-            } else {
-                ExtBravaisClass::tI2
-            }
-        }
-        BravaisClass::hR => {
-            if f64::abs(f64::sqrt(3.0) * a - f64::sqrt(2.0) * c) < threshold {
-                warn!("hR lattice, but sqrt(3)a almost equal to sqrt(2)c");
-            }
-            if f64::sqrt(3.0) * a < f64::sqrt(2.0) * c {
-                ExtBravaisClass::hR1
-            } else {
-                ExtBravaisClass::hR2
-            }
-        }
-        BravaisClass::hP => {
-            // 143..=163 without 150, 152, 154..=156.
-            if [
-                143, 144, 145, 146, 147, 148, 149, 151, 153, 157, 159, 160, 161, 162, 163,
-            ]
-            .contains(&spg_number)
-            {
-                ExtBravaisClass::hP1
-            } else {
-                ExtBravaisClass::hP2
-            }
-        }
-        BravaisClass::cP => match spg_number {
-            x if (195..=206).contains(&x) => ExtBravaisClass::cP1,
-            x if (207..=230).contains(&x) => ExtBravaisClass::cP2,
-            _ => unreachable!("cP bravais lattice spacegroup number in wrong range"),
-        },
-        BravaisClass::cF => match spg_number {
-            x if (195..=206).contains(&x) => ExtBravaisClass::cF1,
-            x if (207..=230).contains(&x) => ExtBravaisClass::cF2,
-            _ => unreachable!("cF bravais lattice spacegroup number in wrong range"),
-        },
-        BravaisClass::cI => ExtBravaisClass::cI1,
-    };
-
-    let path_info = compute_path(&ext_bravais)?;
-
-    Ok((path_info, crystal_priv))
-}
 
 // TODO: move to ccmat-moyo and add wrapper for MagneticMoyoDataset, and PR to moyo to integrate.
 // It can be generic over Mag/nonmag dataset.
