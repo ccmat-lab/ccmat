@@ -247,7 +247,7 @@ impl From<f64> for Volume {
 
 /// dot product
 fn dot(v: &Vec3<f64>, u: &Vec3<f64>) -> f64 {
-    v[0] * u[0] + v[1] * u[1] + v[2] + u[2]
+    v[0] * u[0] + v[1] * u[1] + v[2] * u[2]
 }
 
 /// cross product
@@ -344,16 +344,16 @@ impl Lattice {
     }
 
     #[must_use]
-    pub fn reciprocal_lattice(&self) -> LatticeReciprocal {
+    pub fn reciprocal(&self) -> LatticeReciprocal {
         let (a, b, c) = (self.a.into(), self.b.into(), self.c.into());
         let volume: f64 = Volume(dot(&a, &cross(&b, &c))).into();
         let a_star = 1.0 / volume * (2.0 * std::f64::consts::PI) * cross(&b, &c);
         let b_star = 1.0 / volume * (2.0 * std::f64::consts::PI) * cross(&c, &a);
         let c_star = 1.0 / volume * (2.0 * std::f64::consts::PI) * cross(&a, &b);
 
-        let a_star = a_star.map(InvAngstrom::from);
-        let b_star = b_star.map(InvAngstrom::from);
-        let c_star = c_star.map(InvAngstrom::from);
+        let a_star = Vec3(a_star.map(InvAngstrom::from));
+        let b_star = Vec3(b_star.map(InvAngstrom::from));
+        let c_star = Vec3(c_star.map(InvAngstrom::from));
 
         LatticeReciprocal::new(a_star, b_star, c_star)
     }
@@ -475,17 +475,17 @@ macro_rules! lattice_angstrom {
 
 pub struct LatticeReciprocal {
     // internal use a not a_star, but the API is a_star to make it very explicit.
-    a: [InvAngstrom; 3],
-    b: [InvAngstrom; 3],
-    c: [InvAngstrom; 3],
+    a: Vec3<InvAngstrom>,
+    b: Vec3<InvAngstrom>,
+    c: Vec3<InvAngstrom>,
 }
 
 impl LatticeReciprocal {
     #[must_use]
     pub fn new(
-        a_star: [InvAngstrom; 3],
-        b_star: [InvAngstrom; 3],
-        c_star: [InvAngstrom; 3],
+        a_star: Vec3<InvAngstrom>,
+        b_star: Vec3<InvAngstrom>,
+        c_star: Vec3<InvAngstrom>,
     ) -> Self {
         LatticeReciprocal {
             a: a_star,
@@ -495,17 +495,32 @@ impl LatticeReciprocal {
     }
 
     #[must_use]
-    pub fn a_star(&self) -> [InvAngstrom; 3] {
+    pub fn reciprocal(&self) -> Lattice {
+        let (a, b, c) = (self.a.into(), self.b.into(), self.c.into());
+        let volume: f64 = Volume(dot(&a, &cross(&b, &c))).into();
+        let a_star = 1.0 / volume * (2.0 * std::f64::consts::PI) * cross(&b, &c);
+        let b_star = 1.0 / volume * (2.0 * std::f64::consts::PI) * cross(&c, &a);
+        let c_star = 1.0 / volume * (2.0 * std::f64::consts::PI) * cross(&a, &b);
+
+        let a_star = Vec3(a_star.map(Angstrom::from));
+        let b_star = Vec3(b_star.map(Angstrom::from));
+        let c_star = Vec3(c_star.map(Angstrom::from));
+
+        Lattice::new(a_star, b_star, c_star)
+    }
+
+    #[must_use]
+    pub fn a_star(&self) -> Vec3<InvAngstrom> {
         self.a
     }
 
     #[must_use]
-    pub fn b_star(&self) -> [InvAngstrom; 3] {
+    pub fn b_star(&self) -> Vec3<InvAngstrom> {
         self.b
     }
 
     #[must_use]
-    pub fn c_star(&self) -> [InvAngstrom; 3] {
+    pub fn c_star(&self) -> Vec3<InvAngstrom> {
         self.c
     }
 }
@@ -705,6 +720,11 @@ impl Crystal {
     }
 
     #[must_use]
+    pub fn lattice_reciprocal(&self) -> LatticeReciprocal {
+        self.lattice().reciprocal()
+    }
+
+    #[must_use]
     pub fn positions(&self) -> Vec<Vec3<FracCoord>> {
         // TODO: avoid clone in readonly?
         self.positions
@@ -737,6 +757,12 @@ mod tests {
     use super::*;
 
     #[test]
+    fn build_crystal_compile_error() {
+        let t = trybuild::TestCases::new();
+        t.compile_fail("tests/build_crystal/^fail_*.rs");
+    }
+
+    #[test]
     fn macro_lattice_angstrom() {
         let _ = lattice_angstrom![
             a = (1.0, 0.0, 0.0),
@@ -759,9 +785,16 @@ mod tests {
     }
 
     #[test]
-    fn build_crystal_compile_error() {
-        let t = trybuild::TestCases::new();
-        t.compile_fail("tests/build_crystal/^fail_*.rs");
+    fn reciprocal() {
+        let lattice = lattice_angstrom![
+            // no orthogonal cell
+            a = (2.0, 0.5, 0.0),
+            b = (0.0, 3.0, 0.5),
+            c = (0.5, 0.0, 4.0),
+        ];
+
+        let latt2 = lattice.reciprocal().reciprocal();
+        dbg!(latt2, lattice);
     }
 
     #[test]

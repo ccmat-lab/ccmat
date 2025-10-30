@@ -69,8 +69,8 @@ pub fn find_path(
     let structure_std = syminfo.standardize_structure();
     let spg_number = syminfo.spg_number();
 
-    let crystal_priv: Crystal = find_primitive_hpkot(&structure_std, symprec)?;
-    let lattice_params = crystal_priv.lattice().lattice_params();
+    let structure_priv: Crystal = find_primitive_hpkot(&structure_std, symprec)?;
+    let lattice_params = structure_priv.lattice().lattice_params();
     let (a, b, c, alpha, beta, gamma) = lattice_params;
     let a: f64 = a.into();
     let b: f64 = b.into();
@@ -80,7 +80,12 @@ pub fn find_path(
     let gamma: f64 = gamma.into();
 
     let ext_bravais = match syminfo.bravais_class() {
-        BravaisClass::aP => todo!(),
+        BravaisClass::aP => {
+            // get the niggli reduced reciprocal lattice from standard lattice
+            // let lattice_reciprocal = structure_std.lattice_reciprocal().niggli_reduce();
+            // let lattice_real = lattice_reciprocal.reciprocal();
+            todo!()
+        },
         BravaisClass::mP => ExtBravaisClass::mP1,
         BravaisClass::mC => {
             let cosbeta = f64::cos(beta);
@@ -230,5 +235,5 @@ pub fn find_path(
     let path_info = path::lookup(&ext_bravais);
     let path_eval = path::eval(path_info, lattice_params)?;
 
-    Ok((path_info, path_eval, crystal_priv))
+    Ok((path_info, path_eval, structure_priv))
 }
