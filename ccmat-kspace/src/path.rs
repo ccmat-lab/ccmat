@@ -101,7 +101,7 @@ pub enum HighSymmetryPoint {
 
 // XXX pub? in order to be tested against original python impl
 #[must_use]
-pub fn lookup(ext_bravais: &ExtBravaisClass) -> &'static KpathInfo {
+pub(crate) fn lookup(ext_bravais: &ExtBravaisClass) -> &'static KpathInfo {
     match ext_bravais {
         // Triclinic
         ExtBravaisClass::aP1 => unimplemented!("aP1 is reserved for aP2+aP3, check hpkot paper"),
