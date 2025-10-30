@@ -1,14 +1,14 @@
 mod path;
 
-use log::warn;
 use ccmat_core::{analyze_symmetry, BravaisClass, Crystal};
+use log::warn;
 
 use crate::path::{KpathEval, KpathInfo};
 
 fn find_primitive_hpkot(
-    cell_std: &Crystal,
+    standardize_structure: &Crystal,
     symprec: f64,
-) -> Result<moyo::base::Cell, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<Crystal, Box<dyn std::error::Error + Send + Sync>> {
     todo!()
 }
 
@@ -66,10 +66,10 @@ pub fn find_path(
     threshold: f64,
 ) -> Result<(&'static KpathInfo, KpathEval, Crystal), Box<dyn std::error::Error + Send + Sync>> {
     let syminfo = analyze_symmetry(crystal, symprec)?;
-    let cell_std = syminfo.std_cell()?;
+    let structure_std = syminfo.standardize_structure();
     let spg_number = syminfo.spg_number();
 
-    let crystal_priv: Crystal = find_primitive_hpkot(&cell_std, symprec)?.try_into()?;
+    let crystal_priv: Crystal = find_primitive_hpkot(&structure_std, symprec)?;
     let lattice_params = crystal_priv.lattice().lattice_params();
     let (a, b, c, alpha, beta, gamma) = lattice_params;
     let a: f64 = a.into();
