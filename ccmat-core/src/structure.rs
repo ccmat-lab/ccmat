@@ -335,6 +335,7 @@ impl Lattice {
         self.lattice_params().5
     }
 
+    #[must_use]
     pub fn volume(&self) -> Volume {
         let (a, b, c) = (self.a.into(), self.b.into(), self.c.into());
 
