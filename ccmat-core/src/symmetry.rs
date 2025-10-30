@@ -10,6 +10,7 @@
 
 use std::borrow::Cow;
 
+use crate::math::{TransformationMatrix, Vector3};
 use crate::moyo_wrapper;
 use crate::structure::Centering;
 use crate::BravaisClass;
@@ -104,6 +105,22 @@ pub fn analyze_symmetry(
     let inner = moyo_wrapper::analyze_symmetry(&cell, symprec)?;
     let sym_info = SymmetryInfo { inner };
     Ok(sym_info)
+}
+
+type Basis = [Vector3<f64>; 3];
+
+/// further wrap ``moyo::math::niggili::niggli_reduce`` (however not exposed) into function where the types ccmat confortable to work with.
+pub(crate) fn niggli_reduce(
+    basis: Basis,
+) -> Result<(Basis, TransformationMatrix), Box<dyn std::error::Error + Send + Sync>> {
+    let basis = basis.map(|v| *v);
+    match moyo_wrapper::niggli_reduce(basis) {
+        Ok(result) => {
+            let basis: [Vector3<f64>; 3] = result.0.map(Vector3);
+            Ok((basis, result.1))
+        }
+        Err(err) => Err(format!("niggli reduction failed (moyo as symmery engine): {err}").into()),
+    }
 }
 
 impl From<&Crystal> for moyo_wrapper::Cell {

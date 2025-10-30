@@ -81,11 +81,45 @@ pub fn find_path(
 
     let ext_bravais = match syminfo.bravais_class() {
         BravaisClass::aP => {
-            // get the niggli reduced reciprocal lattice from standard lattice
-            // let lattice_reciprocal = structure_std.lattice_reciprocal().niggli_reduce();
-            // let lattice_real = lattice_reciprocal.reciprocal();
+            // get the niggli reduced reciprocal lattice from standard lattice and back to real
+            // space.
+            let (latt_reciprocal_niggli_reduced, _) =
+                structure_std.lattice().reciprocal().niggli_reduce()?;
+
+            let (ka, kb, kc, kalpha, kbeta, kgamma) =
+                latt_reciprocal_niggli_reduced.lattice_params();
+
+            let ka: f64 = ka.into();
+            let kb: f64 = kb.into();
+            let kc: f64 = kc.into();
+            let kalpha: f64 = kalpha.into();
+            let kbeta: f64 = kbeta.into();
+            let kgamma: f64 = kgamma.into();
+
+            let mut matrix_mapping = [
+                (
+                    f64::abs(kb * kc * f64::cos(kalpha)),
+                    [[0, 0, 1], [1, 0, 0], [0, 1, 0]],
+                ),
+                (
+                    f64::abs(kc * ka * f64::cos(kbeta)),
+                    [[0, 1, 0], [0, 0, 1], [1, 0, 0]],
+                ),
+                (
+                    f64::abs(ka * kb * f64::cos(kgamma)),
+                    [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+                ),
+            ];
+
+            matrix_mapping.sort_by(|x, y| {
+                x.partial_cmp(y)
+                    .expect("f64::NaN appears in matrix mapping")
+            });
+            let matrx_convert = matrix_mapping[0].1;
+
+            let latt = latt_reciprocal_niggli_reduced.reciprocal();
             todo!()
-        },
+        }
         BravaisClass::mP => ExtBravaisClass::mP1,
         BravaisClass::mC => {
             let cosbeta = f64::cos(beta);
