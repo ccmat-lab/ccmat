@@ -10,7 +10,7 @@
 
 use std::borrow::Cow;
 
-use crate::math::{TransformationMatrix, Vector3};
+use crate::math::{Matrix3, TransformationMatrix, Vector3};
 use crate::moyo_wrapper;
 use crate::structure::Centering;
 use crate::BravaisClass;
@@ -117,7 +117,10 @@ pub(crate) fn niggli_reduce(
     match moyo_wrapper::niggli_reduce(basis) {
         Ok(result) => {
             let basis: [Vector3<f64>; 3] = result.0.map(Vector3);
-            Ok((basis, result.1))
+            let mt = result
+                .1
+                .map(|v| [f64::from(v[0]), f64::from(v[1]), f64::from(v[2])]);
+            Ok((basis, Matrix3(mt)))
         }
         Err(err) => Err(format!("niggli reduction failed (moyo as symmery engine): {err}").into()),
     }

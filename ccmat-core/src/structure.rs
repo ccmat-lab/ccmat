@@ -366,6 +366,14 @@ impl Lattice {
         LatticeReciprocal::new(a_star, b_star, c_star)
     }
 
+    /// Find  niggli reduce lattice.
+    ///
+    /// It using `moyo` to search the niggli reduced lattice, return the reduced lattice and the
+    /// operation matrix.
+    ///
+    /// # Errors
+    ///
+    /// Error when the search failed which happened if the lattice found is not pass the niggli lattice validation.
     pub fn niggli_reduce(
         &self,
     ) -> Result<(Self, TransformationMatrix), Box<dyn std::error::Error + Send + Sync>> {
@@ -375,9 +383,32 @@ impl Lattice {
         Ok((latt, matrix))
     }
 
+    /// Lattice is represented in the new basis
+    ///
+    /// (a', b', c') = (a, b, c) * { m00 m01 m02 }
+    ///                            { m10 m11 m12 }
+    ///                            { m20 m21 m22 }
+    ///
+    /// a' = m00 * a + m10 * b + m20 * c
+    /// b' = m01 * a + m11 * b + m21 * c
+    /// c' = m02 * a + m12 * b + m22 * c
     #[must_use]
-    pub fn transform(&self, op: [[f64; 3]; 3]) -> Self {
-        todo!()
+    pub fn change_basis_by(&self, m: &TransformationMatrix) -> Self {
+        let (a, b, c): (Vector3<f64>, Vector3<f64>, Vector3<f64>) =
+            (self.a.into(), self.b.into(), self.c.into());
+
+        // dbg!(a, b, c);
+        // dbg!(m[0][0], m[1][0], m[2][0]);
+        // dbg!(m[0][0] * a);
+        // dbg!(m[1][0] * b);
+        // dbg!(m[0][0] * a + m[1][0] * b);
+
+        let ap = m[0][0] * a + m[1][0] * b + m[2][0] * c;
+        let bp = m[0][1] * a + m[1][1] * b + m[2][1] * c;
+        let cp = m[0][2] * a + m[1][2] * b + m[2][2] * c;
+
+        dbg!(ap);
+        Self::new(ap.into(), bp.into(), cp.into())
     }
 }
 
@@ -564,9 +595,23 @@ impl LatticeReciprocal {
         Ok((latt, matrix))
     }
 
+    /// Lattice is represented in the new basis
+    ///
+    /// (a', b', c') = (a, b, c) * { m00 m01 m02 }
+    ///                            { m10 m11 m12 }
+    ///                            { m20 m21 m22 }
+    ///
+    /// a' = m00 * a + m10 * b + m20 * c
+    /// b' = m01 * a + m11 * b + m21 * c
+    /// c' = m02 * a + m12 * b + m22 * c
     #[must_use]
-    pub fn transform(&self, op: [[f64; 3]; 3]) -> Self {
-        todo!()
+    pub fn change_basis_by(&self, m: &TransformationMatrix) -> Self {
+        let (a, b, c): (Vector3<f64>, Vector3<f64>, Vector3<f64>) =
+            (self.a.into(), self.b.into(), self.c.into());
+        let ap = m[0][0] * a + m[1][0] * b + m[2][0] * c;
+        let bp = m[0][1] * a + m[1][1] * b + m[2][1] * c;
+        let cp = m[0][2] * a + m[1][2] * b + m[2][2] * c;
+        Self::new(ap.into(), bp.into(), cp.into())
     }
 
     #[must_use]
@@ -812,7 +857,7 @@ impl Crystal {
 
 #[cfg(test)]
 mod tests {
-    use crate::atomic_number;
+    use crate::{atomic_number, matrix_3x3};
 
     use super::*;
 
@@ -883,5 +928,29 @@ mod tests {
             .unwrap();
 
         assert_eq!(crystal.volume(), Volume(4.603 * 4.603 * 4.603));
+    }
+
+    #[test]
+    fn change_basis_by() {
+        let lattice = lattice_angstrom![
+            // no orthogonal cell
+            a = (2.0, 0.5, 0.0),
+            b = (0.0, 3.0, 0.5),
+            c = (0.5, 0.0, 4.0),
+        ];
+
+        let tmatrix = matrix_3x3![
+            1 0 0;
+            0 1 0;
+            0 0 1;
+        ];
+
+        dbg!(lattice.change_basis_by(&tmatrix));
+
+        // let tmatrix = matrix_3x3![
+        //     sqrt(3)/2  -1/2     0;
+        //     1/2   sqrt(3)/2     0;
+        //     0             0     1;
+        // ];
     }
 }
