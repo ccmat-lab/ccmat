@@ -1399,6 +1399,34 @@ mod tests {
     use super::*;
 
     #[test]
+    fn eval_aP2() {
+        // inv
+        let lattice = lattice_angstrom![
+            (-1.2489688500000000, 2.4101964100000002, -1.1084066800000001),
+            (-3.8805945199999998, -0.4578071300000000, 0.1425430700000000),
+            (-1.4313846100000001, 2.5585931100000003, 3.3956427200000006),
+        ];
+        let sites = sites_frac_coord![
+            (0.5000000000000000, 0.5000000000000000, 0.5000000000000000), atomic_number!(Cu);
+            (0.0000000000000000, 0.0000000000000000, 0.0000000000000000), atomic_number!(Ag);
+            (0.1691864300000000, 0.3370706700000000, 0.2835515499999998), atomic_number!(O);
+            (0.8308135699999999, 0.6629293300000000, 0.7164484500000001), atomic_number!(O);
+        ];
+
+        let s = CrystalBuilder::new()
+            .with_lattice(&lattice)
+            .with_sites(&sites)
+            .build()
+            .unwrap();
+
+        let kpatheval = eval(lookup(&ExtBravaisClass::aP2), s.lattice().lattice_params()).unwrap();
+        let point_R = kpatheval.points[7];
+
+        assert_eq!(point_R.0, &HighSymmetryPoint::R);
+        assert_eq!(point_R.1, (FracCoord(0.5), FracCoord(0.5), FracCoord(0.5)));
+    }
+
+    #[test]
     fn eval_hR1() {
         // inv
         let lattice = lattice_angstrom![

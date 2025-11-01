@@ -1,6 +1,6 @@
 mod path;
 
-use ccmat_core::{analyze_symmetry, BravaisClass, Crystal};
+use ccmat_core::{analyze_symmetry, math::TransformationMatrix, matrix_3x3, BravaisClass, Crystal};
 use log::warn;
 
 use crate::path::{KpathEval, KpathInfo};
@@ -69,8 +69,8 @@ pub fn find_path(
     let structure_std = syminfo.standardize_structure();
     let spg_number = syminfo.spg_number();
 
-    let crystal_priv: Crystal = find_primitive_hpkot(&structure_std, symprec)?;
-    let lattice_params = crystal_priv.lattice().lattice_params();
+    let structure_priv: Crystal = find_primitive_hpkot(&structure_std, symprec)?;
+    let lattice_params = structure_priv.lattice().lattice_params();
     let (a, b, c, alpha, beta, gamma) = lattice_params;
     let a: f64 = a.into();
     let b: f64 = b.into();
@@ -80,7 +80,61 @@ pub fn find_path(
     let gamma: f64 = gamma.into();
 
     let ext_bravais = match syminfo.bravais_class() {
-        BravaisClass::aP => todo!(),
+        BravaisClass::aP => {
+            // get the niggli reduced reciprocal lattice from standard lattice and back to real
+            // space.
+            let (latt_reciprocal_niggli_reduced, _) =
+                structure_std.lattice().reciprocal().niggli_reduce()?;
+
+            let (ka, kb, kc, kalpha, kbeta, kgamma) =
+                latt_reciprocal_niggli_reduced.lattice_params();
+
+            let ka: f64 = ka.into();
+            let kb: f64 = kb.into();
+            let kc: f64 = kc.into();
+            let kalpha: f64 = kalpha.into();
+            let kbeta: f64 = kbeta.into();
+            let kgamma: f64 = kgamma.into();
+
+            let mut matrix_mapping: [(f64, TransformationMatrix); 3] = [
+                (
+                    f64::abs(kb * kc * f64::cos(kalpha)),
+                    // XXX: double check this is the correct matrix, row and colume representation
+                    // might changed.
+                    matrix_3x3![
+                        0 0 1;
+                        1 0 0;
+                        0 1 0;
+                    ],
+                ),
+                (
+                    f64::abs(kc * ka * f64::cos(kbeta)),
+                    matrix_3x3![
+                        0 1 0;
+                        0 0 1;
+                        1 0 0;
+                    ],
+                ),
+                (
+                    f64::abs(ka * kb * f64::cos(kgamma)),
+                    matrix_3x3![
+                        1 0 0;
+                        0 1 0;
+                        0 0 1;
+                    ],
+                ),
+            ];
+
+            matrix_mapping.sort_by(|x, y| {
+                x.0.partial_cmp(&y.0)
+                    .expect("f64::NaN appears in matrix mapping")
+            });
+            let mt = std::mem::take(&mut matrix_mapping[0].1);
+
+            let latt_view = latt_reciprocal_niggli_reduced.reciprocal();
+            // let latt_view = latt_view.change_basis(mt);
+            todo!()
+        }
         BravaisClass::mP => ExtBravaisClass::mP1,
         BravaisClass::mC => {
             let cosbeta = f64::cos(beta);
@@ -230,5 +284,5 @@ pub fn find_path(
     let path_info = path::lookup(&ext_bravais);
     let path_eval = path::eval(path_info, lattice_params)?;
 
-    Ok((path_info, path_eval, crystal_priv))
+    Ok((path_info, path_eval, structure_priv))
 }

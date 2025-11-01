@@ -65,6 +65,7 @@ dependencies = [
 name = "ccmat-core"
 version = "0.1.0"
 dependencies = [
+ "ccmat-macros",
  "moyo",
  "nalgebra",
  "trybuild",
@@ -78,6 +79,15 @@ dependencies = [
  "evalexpr",
  "log",
  "moyo",
+]
+
+[[package]]
+name = "ccmat-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
