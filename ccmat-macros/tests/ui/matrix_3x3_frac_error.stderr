@@ -1,0 +1,5 @@
+error: integer division detected in matrix literal; e.g use `1./2.` instead of `1/2`
+ --> tests/ui/matrix_3x3_frac_error.rs:5:9
+  |
+5 |         2/4 2 3;
+  |         ^

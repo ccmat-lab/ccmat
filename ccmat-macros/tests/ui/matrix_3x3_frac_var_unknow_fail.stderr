@@ -1,0 +1,5 @@
+error: unable to know if it is a float when expanding macro
+ --> tests/ui/matrix_3x3_frac_var_unknow_fail.rs:7:9
+  |
+7 |         a/b 2 3;
+  |         ^
