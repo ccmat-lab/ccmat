@@ -1,6 +1,7 @@
 use std::ops::{Add, Deref, Index, Mul};
 
 use crate::structure::{Angstrom, InvAngstrom};
+pub use ccmat_macros::matrix_3x3;
 
 #[derive(Default)]
 pub struct Matrix3(pub [[f64; 3]; 3]);
@@ -18,12 +19,8 @@ pub type RotationMatrix = Matrix3;
 
 #[macro_export]
 macro_rules! matrix_3x3 {
-    ( $( $( $x:expr )+ );+ $(;)? ) => {{
-        let inner = [
-            $(
-                [ $( f64::from($x)),+ ],
-            )+
-        ];
+    ( $($tokens:tt)* ) => {{
+        let inner = $crate::math::matrix_3x3!($($tokens)*);
         $crate::math::Matrix3(inner)
     }};
 }
