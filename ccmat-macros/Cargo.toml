@@ -14,7 +14,7 @@ exclude.workspace = true
 [dependencies]
 proc-macro2 = "1.0.103"
 quote = "1.0.41"
-syn = "2.0.108"
+syn = { version = "2.0.108", features = ["visit-mut"] }
 trybuild = "1.0.113"
 
 [lib]

@@ -7,8 +7,10 @@
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::parse::{Parse, ParseStream};
+use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
-use syn::{BinOp, ExprBinary, ExprLit, Lit};
+use syn::visit_mut::VisitMut;
+use syn::{BinOp, ExprBinary, ExprCall, ExprLit, ExprPath, Lit, Path, PathSegment};
 use syn::{Expr, Result, Token};
 
 #[rustfmt::skip]
@@ -16,17 +18,21 @@ struct MatrixInput {
     mat: [[Expr; 3]; 3],
 }
 
-fn detect_integer_division(expr: &Expr) -> Result<bool> {
+fn detect_integer_division(expr: &Expr) -> Result<()> {
     match expr {
         Expr::Binary(ExprBinary {
             left, op, right, ..
         }) => {
             // If op is `/`, check if both sides look integer-ish
-            if matches!(op, BinOp::Div(_)) && (is_integer_expr(left)? || is_integer_expr(right)?) {
-                return Ok(true);
+            if matches!(op, BinOp::Div(_)) {
+                is_integer_expr(left)?;
+                is_integer_expr(right)?;
             }
+
             // Recurse down left/right anyway
-            Ok(detect_integer_division(left)? || detect_integer_division(right)?)
+            detect_integer_division(left)?;
+            detect_integer_division(right)?;
+            Ok(())
         }
 
         // Parentheses
@@ -37,37 +43,104 @@ fn detect_integer_division(expr: &Expr) -> Result<bool> {
 
         // Function call arguments, include Path Call e.g f64::cos(1/2)
         Expr::Call(call) => {
-            let mut iflag = false;
             for arg in &call.args {
-                if detect_integer_division(arg)? {
-                    iflag = true;
-                }
+                detect_integer_division(arg)?;
             }
-            Ok(iflag)
+            Ok(())
         }
 
-        // // Method call args: foo.bar(1/2)
-        // Expr::MethodCall(call) => {
-        //     detect_integer_division(&call.receiver) || call.args.iter().any(detect_integer_division)
-        // }
+        // Method call args: foo.bar(1/2)
+        Expr::MethodCall(call) => {
+            for arg in &call.args {
+                detect_integer_division(arg)?;
+            }
+            detect_integer_division(&call.receiver)?;
+
+            Ok(())
+        }
 
         // Other expressions — no division here
-        _ => Ok(false),
+        _ => Ok(()),
     }
 }
 
-fn is_integer_expr(expr: &Expr) -> Result<bool> {
+fn is_integer_expr(expr: &Expr) -> Result<()> {
     match expr {
-        Expr::Path(_) => Err(syn::Error::new(
-            expr.span(),
-            "unable to know if it is a float when expanding macro",
-        )),
+        Expr::Path(ExprPath { path, .. }) => {
+            if path.segments.len() > 2
+                && path.segments[0].ident == "std"
+                && path.segments[1].ident == "f64"
+            {
+                Ok(())
+            } else {
+                Err(syn::Error::new(
+                    expr.span(),
+                    "cannot determine float type at compile time; convert explicitly using `f64::from(...)`"
+                ))
+            }
+        }
         Expr::Lit(ExprLit {
             lit: Lit::Int(_), ..
-        }) => Ok(true),
+        }) => {
+            Err(syn::Error::new(
+                expr.span(),
+                "integer division detected; Rust performs integer division here, but this macro expects floats. 
+Write `1.0 / 2.0` instead of `1 / 2`."
+            ))
+        },
         Expr::Paren(p) => is_integer_expr(&p.expr),
         Expr::Unary(u) => is_integer_expr(&u.expr), // handle -1
-        _ => Ok(false),
+        _ => Ok(()),
+    }
+}
+
+struct PathPrefixF64Attach;
+
+impl VisitMut for PathPrefixF64Attach {
+    fn visit_expr_mut(&mut self, i: &mut syn::Expr) {
+        // PI -> f64::const::PI
+        if let Expr::Path(ExprPath { path, .. }) = i {
+            if path.segments.len() == 1 {
+                let ident = &path.segments[0].ident;
+                if ident == "PI" || ident == "Pi" || ident == "pi" {
+                    *i = syn::parse_quote!(std::f64::consts::PI);
+                    return;
+                }
+            }
+        }
+
+        if let Expr::Call(ExprCall { func, .. }) = i {
+            // cos(...) -> f64::cos(...)
+            if let Expr::Path(ExprPath { path, .. }) = &mut **func {
+                if path.segments.len() == 1 {
+                    let ident = &path.segments[0].ident;
+                    if ident == "abs"
+                        || ident == "cos"
+                        || ident == "sin"
+                        || ident == "tan"
+                        || ident == "acos"
+                        || ident == "asin"
+                        || ident == "atan"
+                        || ident == "acosh"
+                        || ident == "asinh"
+                        || ident == "atanh"
+                        || ident == "sqrt"
+                        || ident == "log"
+                    {
+                        let mut segs = Punctuated::new();
+                        segs.push(PathSegment::from(syn::Ident::new("f64", path.span())));
+                        segs.push(PathSegment::from(ident.clone()));
+
+                        *path = Path {
+                            leading_colon: None,
+                            segments: segs,
+                        };
+                    }
+                }
+            }
+        }
+
+        syn::visit_mut::visit_expr_mut(self, i);
     }
 }
 
@@ -78,14 +151,12 @@ impl Parse for MatrixInput {
         let span = input.span();
 
         while !input.is_empty() {
-            if let Ok(expr) = input.parse::<Expr>() {
+            if let Ok(mut expr) = input.parse::<Expr>() {
+                // f64::op
+                PathPrefixF64Attach.visit_expr_mut(&mut expr);
+
                 // detect integer devide as an error e.g raise on 1/2
-                if detect_integer_division(&expr)? {
-                    return Err(syn::Error::new(
-                        expr.span(),
-                        "integer division detected in matrix literal; e.g use `1./2.` instead of `1/2`",
-                    ));
-                }
+                detect_integer_division(&expr)?;
 
                 if current_row.len() > 2 {
                     return Err(syn::Error::new(expr.span(), "expect 3 items per row"));
