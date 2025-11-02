@@ -106,15 +106,33 @@ impl From<Vector3<f64>> for Vector3<InvAngstrom> {
 #[cfg(test)]
 mod tests {
 
+    macro_rules! assert_eq_approx {
+        ($a:expr, $b:expr) => {{
+            assert_eq_approx!($a, $b, 1e-12)
+        }};
+        ($a:expr, $b:expr, $tol:expr) => {{
+            let (left, right) = ($a, $b);
+            if (left - right).abs() > $tol {
+                panic!(
+                    "assertion failed: `{} ≈ {}`, diff:  `{}`, tol: `{}`",
+                    left,
+                    right,
+                    (left - right).abs(),
+                    $tol
+                );
+            }
+        }};
+    }
+
     #[test]
     fn matrix_3x3() {
         let mat = matrix_3x3![
-            1 2 3;
-            4 5 6.1;
-            7 8 9;
+            cos(PI/3.)   2           3;
+            4            5     1.0+6.1;
+            7            8   sqrt(9.0);
         ];
 
-        assert_eq!(mat[0][0], 1.0);
-        assert_eq!(mat[1][2], 6.1);
+        assert_eq_approx!(mat[0][0], 0.5);
+        assert_eq_approx!(mat[1][2], 7.1);
     }
 }

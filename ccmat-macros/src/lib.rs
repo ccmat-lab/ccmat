@@ -159,13 +159,23 @@ impl Parse for MatrixInput {
                 detect_integer_division(&expr)?;
 
                 if current_row.len() > 2 {
-                    return Err(syn::Error::new(expr.span(), "expect 3 items per row"));
+                    return Err(syn::Error::new(
+                        expr.span(),
+                        "cannot have more than 3 items per row",
+                    ));
                 }
                 current_row.push(expr);
             }
 
             if input.peek(Token!(;)) {
                 input.parse::<Token!(;)>()?;
+                if current_row.len() != 3 {
+                    return Err(syn::Error::new(
+                        current_row[0].span(),
+                        "each row must contain exactly 3 elements — this row has fewer; the spacing may be ambiguous. Consider using `,` to separate elements explicitly."
+                    ));
+                }
+
                 rows.push(std::mem::take(&mut current_row));
             } else if input.peek(Token!(,)) {
                 // allow ',' commas optionally

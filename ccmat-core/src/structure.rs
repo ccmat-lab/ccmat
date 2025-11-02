@@ -396,18 +396,10 @@ impl Lattice {
     pub fn change_basis_by(&self, m: &TransformationMatrix) -> Self {
         let (a, b, c): (Vector3<f64>, Vector3<f64>, Vector3<f64>) =
             (self.a.into(), self.b.into(), self.c.into());
-
-        // dbg!(a, b, c);
-        // dbg!(m[0][0], m[1][0], m[2][0]);
-        // dbg!(m[0][0] * a);
-        // dbg!(m[1][0] * b);
-        // dbg!(m[0][0] * a + m[1][0] * b);
-
         let ap = m[0][0] * a + m[1][0] * b + m[2][0] * c;
         let bp = m[0][1] * a + m[1][1] * b + m[2][1] * c;
         let cp = m[0][2] * a + m[1][2] * b + m[2][2] * c;
 
-        dbg!(ap);
         Self::new(ap.into(), bp.into(), cp.into())
     }
 }
@@ -861,6 +853,25 @@ mod tests {
 
     use super::*;
 
+    // TODO: dup, move to test_utils?
+    macro_rules! assert_eq_approx {
+        ($a:expr, $b:expr) => {{
+            assert_eq_approx!($a, $b, 1e-12)
+        }};
+        ($a:expr, $b:expr, $tol:expr) => {{
+            let (left, right) = ($a, $b);
+            if (left - right).abs() > $tol {
+                panic!(
+                    "assertion failed: `{} ≈ {}`, diff:  `{}`, tol: `{}`",
+                    left,
+                    right,
+                    (left - right).abs(),
+                    $tol
+                );
+            }
+        }};
+    }
+
     #[test]
     fn build_crystal_compile_error() {
         let t = trybuild::TestCases::new();
@@ -900,8 +911,16 @@ mod tests {
 
         let latt2 = lattice.reciprocal().reciprocal();
 
-        // TODO: an assert with assert_approx! util
-        dbg!(latt2, lattice);
+        // a
+        assert_eq_approx!(f64::from(latt2.a[0]), 2.0);
+        assert_eq_approx!(f64::from(latt2.a[1]), 0.5);
+        assert_eq_approx!(f64::from(latt2.a[2]), 0.0);
+
+        // b
+        assert_eq_approx!(f64::from(latt2.b[2]), 0.5);
+
+        // c
+        assert_eq_approx!(f64::from(latt2.c[1]), 0.0);
     }
 
     #[test]
@@ -945,12 +964,40 @@ mod tests {
             0 0 1;
         ];
 
-        dbg!(lattice.change_basis_by(&tmatrix));
+        let latt = lattice.change_basis_by(&tmatrix);
+        // a
+        assert_eq_approx!(f64::from(latt.a[0]), 2.0);
+        assert_eq_approx!(f64::from(latt.a[1]), 0.5);
+        assert_eq_approx!(f64::from(latt.a[2]), 0.0);
 
-        // let tmatrix = matrix_3x3![
-        //     sqrt(3)/2  -1/2     0;
-        //     1/2   sqrt(3)/2     0;
-        //     0             0     1;
-        // ];
+        // b
+        assert_eq_approx!(f64::from(latt.b[2]), 0.5);
+
+        // c
+        assert_eq_approx!(f64::from(latt.c[1]), 0.0);
+
+        // rotate in xy plane
+        let tmatrix = matrix_3x3![
+            sqrt(3.)/2.,    -1./2.,     0;
+            1./2.,     sqrt(3.)/2.,     0;
+            0,                   0,     1;
+        ];
+
+        let latt = lattice.change_basis_by(&tmatrix);
+
+        //  1.73205  1.93301  0.25
+        // -1.0      2.34808  0.433013
+        //  0.5      0.0      4.0
+
+        // a
+        assert_eq_approx!(f64::from(latt.a[0]), 1.73205, 1e-4);
+        assert_eq_approx!(f64::from(latt.a[1]), 1.93301, 1e-4);
+        assert_eq_approx!(f64::from(latt.a[2]), 0.25, 1e-4);
+
+        // b
+        assert_eq_approx!(f64::from(latt.b[2]), 0.433013, 1e-4);
+
+        // c
+        assert_eq_approx!(f64::from(latt.c[1]), 0.0);
     }
 }
