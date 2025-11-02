@@ -38,8 +38,8 @@ where
     fn add(self, rhs: Vector3<T>) -> Self::Output {
         Vector3([
             (*self)[0] + (*rhs)[0],
-            (*self)[0] + (*rhs)[0],
-            (*self)[0] + (*rhs)[0],
+            (*self)[1] + (*rhs)[1],
+            (*self)[2] + (*rhs)[2],
         ])
     }
 }

@@ -99,8 +99,7 @@ pub fn find_path(
             let mut matrix_mapping: [(f64, TransformationMatrix); 3] = [
                 (
                     f64::abs(kb * kc * f64::cos(kalpha)),
-                    // XXX: double check this is the correct matrix, row and colume representation
-                    // might changed.
+                    // a'=b, b'=c, c'=a
                     matrix_3x3![
                         0 0 1;
                         1 0 0;
@@ -109,6 +108,7 @@ pub fn find_path(
                 ),
                 (
                     f64::abs(kc * ka * f64::cos(kbeta)),
+                    // a'=c, b'=a, c'=b
                     matrix_3x3![
                         0 1 0;
                         0 0 1;
@@ -117,6 +117,7 @@ pub fn find_path(
                 ),
                 (
                     f64::abs(ka * kb * f64::cos(kgamma)),
+                    // a'=a, b'=b, c'=c
                     matrix_3x3![
                         1 0 0;
                         0 1 0;
