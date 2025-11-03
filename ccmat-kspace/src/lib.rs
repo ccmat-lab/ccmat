@@ -1,21 +1,189 @@
 mod path;
 
-use ccmat_core::{analyze_symmetry, math::TransformationMatrix, matrix_3x3, BravaisClass, Crystal};
+use ccmat_core::{
+    analyze_symmetry,
+    math::{approx_f64, Matrix3, TransformationMatrix, Vector3},
+    matrix_3x3, BravaisClass, Crystal, CrystalBuilder, FracCoord, Site, SymmetryInfo,
+};
 use log::warn;
 
 use crate::path::{KpathEval, KpathInfo};
 
+#[allow(clippy::too_many_lines)]
+fn find_p_matrix(syminfo: &SymmetryInfo) -> (Matrix3, Matrix3) {
+    let bravais_class = syminfo.bravais_class();
+    let spg_number = syminfo.spg_number();
+
+    let (p, inv_p) = match bravais_class {
+        BravaisClass::cP
+        | BravaisClass::tP
+        | BravaisClass::hP
+        | BravaisClass::oP
+        | BravaisClass::mP
+        // for aP, should have already obtained the primitive cell
+        | BravaisClass::aP => (
+            matrix_3x3![
+                1, 0, 0;
+                0, 1, 0;
+                0, 0, 1;
+            ],
+            matrix_3x3![
+                1, 0, 0;
+                0, 1, 0;
+                0, 0, 1;
+            ],
+        ),
+        BravaisClass::cF | BravaisClass::oF => (
+            (1.0 / 2.0)
+                * matrix_3x3![
+                    0, 1, 1;
+                    1, 0, 1;
+                    1, 1, 0;
+                ],
+            matrix_3x3![
+                -1,  1,  1;
+                 1, -1,  1;
+                 1,  1, -1;
+            ],
+        ),
+        BravaisClass::cI | BravaisClass::tI | BravaisClass::oI => (
+            (1.0 / 2.0)
+                * matrix_3x3![
+                    -1,  1,  1;
+                     1, -1,  1;
+                     1,  1, -1;
+                ],
+            matrix_3x3![
+                0, 1, 1;
+                1, 0, 1;
+                1, 1, 0;
+            ],
+        ),
+        BravaisClass::hR => (
+            (1.0 / 3.0)
+                * matrix_3x3![
+                    2, -1, -1;
+                    1,  1, -2;
+                    1,  1,  1;
+                ],
+            matrix_3x3![
+                 1,  0,  1;
+                -1,  1,  1;
+                 0, -1,  1;
+            ],
+        ),
+        BravaisClass::oS => match spg_number {
+            // oA
+            x if (38..=41).contains(&x) => (
+                (1.0 / 2.0)
+                    * matrix_3x3![
+                        0,  0,  2;
+                        1,  1,  0;
+                       -1,  1,  0;
+                    ],
+                matrix_3x3![
+                    0,  1, -1;
+                    0,  1,  1;
+                    1,  0,  0;
+                ],
+            ),
+            // oC
+            x if (20..=21).contains(&x) || (35..=37).contains(&x) || (63..=68).contains(&x) => (
+                (1.0 / 2.0)
+                    * matrix_3x3![
+                        1,  1,  0;
+                       -1,  1,  0;
+                        0,  0,  2;
+                    ],
+                matrix_3x3![
+                    1, -1,  0;
+                    1,  1,  0;
+                    0,  0,  1;
+                ],
+            ),
+            _ => unreachable!("oS bravais lattice spacegroup number in wrong range"),
+        },
+        BravaisClass::mC => (
+            (1.0 / 2.0)
+                * matrix_3x3![
+                    1, -1,  0;
+                    1,  1,  0;
+                    0,  0,  2;
+                ],
+            matrix_3x3![
+                 1,  1,  0;
+                -1,  1,  0;
+                 0,  0,  1;
+            ],
+        ),
+    };
+
+    (p, inv_p)
+}
+
 fn find_primitive_hpkot(
     standardize_structure: &Crystal,
+    syminfo: &SymmetryInfo,
     symprec: f64,
-) -> Result<Crystal, Box<dyn std::error::Error + Send + Sync>> {
-    todo!()
+) -> Result<(Crystal, Matrix3, Vec<usize>), Box<dyn std::error::Error + Send + Sync>> {
+    let (tp, inv_tp) = find_p_matrix(syminfo);
+
+    let lattice_priv = standardize_structure.lattice().change_basis_by(&tp);
+
+    let (positions, species) = (
+        standardize_structure.positions(),
+        standardize_structure.species(),
+    );
+
+    // The matrix are from above defined function safe to cast
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let nvolume = inv_tp.det() as usize;
+
+    let find_position = |sites: &[Site], p: Vector3<FracCoord>| -> Option<usize> {
+        sites
+            .iter()
+            // this is the Iter::position, return the first index of iter search,
+            // a bit confuse under the context of structure's position
+            .position(|site| {
+                let ps = site.position();
+                let p = p.map(|i| f64::from(i) - f64::from(i).floor());
+                let ps = ps.map(|i| f64::from(i) - f64::from(i).floor());
+                approx_f64(p[0], ps[0], symprec)
+                    && approx_f64(p[1], ps[1], symprec)
+                    && approx_f64(p[2], ps[2], symprec)
+            })
+    };
+
+    let mut sites: Vec<Site> = Vec::with_capacity(positions.len() / nvolume);
+    let mut mapping: Vec<usize> = Vec::with_capacity(positions.len());
+    // brute forcely filter sites with duplicate position
+    for (position, specie) in positions.iter().zip(species.iter()) {
+        let new_position = position.change_basis_by(&tp)?;
+        if let Some(idx) = find_position(&sites, new_position) {
+            // duplicate site
+            mapping.push(idx);
+        } else {
+            let atomic_number = specie.atomic_number();
+            mapping.push(sites.len());
+            sites.push(Site::new(new_position, atomic_number));
+        }
+    }
+
+    #[cfg(debug_assertions)]
+    assert_eq!(mapping.len(), positions.len());
+
+    let crystal = CrystalBuilder::new()
+        .with_lattice(&lattice_priv)
+        .with_sites(&sites)
+        .build()?;
+    Ok((crystal, tp, mapping))
 }
 
 #[allow(non_camel_case_types)]
 #[derive(Debug)]
 pub(crate) enum ExtBravaisClass {
     // Triclinic
+    #[allow(dead_code)]
     aP1, // reserved for aP2 + aP3, ref: hpkot paper (Table 94).
     aP2,
     aP3,
@@ -69,15 +237,15 @@ pub fn find_path(
     let structure_std = syminfo.standardize_structure();
     let spg_number = syminfo.spg_number();
 
-    let structure_priv: Crystal = find_primitive_hpkot(&structure_std, symprec)?;
+    let (structure_priv, _, _) = find_primitive_hpkot(&structure_std, &syminfo, symprec)?;
     let lattice_params = structure_priv.lattice().lattice_params();
     let (a, b, c, alpha, beta, gamma) = lattice_params;
     let a: f64 = a.into();
     let b: f64 = b.into();
     let c: f64 = c.into();
-    let alpha: f64 = alpha.into();
+    let _: f64 = alpha.into();
     let beta: f64 = beta.into();
-    let gamma: f64 = gamma.into();
+    let _: f64 = gamma.into();
 
     let ext_bravais = match syminfo.bravais_class() {
         BravaisClass::aP => {
@@ -131,10 +299,90 @@ pub fn find_path(
                     .expect("f64::NaN appears in matrix mapping")
             });
             let mt = std::mem::take(&mut matrix_mapping[0].1);
+            let lattice = latt_reciprocal_niggli_reduced.reciprocal();
+            let lattice = lattice.change_basis_by(&mt);
+            let klattice = lattice.reciprocal();
 
-            let latt_view = latt_reciprocal_niggli_reduced.reciprocal();
-            // let latt_view = latt_view.change_basis(mt);
-            todo!()
+            // Make them all-acute or all-obtuse with the additional conditions
+            // explained in HPKOT
+            // Note: cos > 0 => angle < 90deg
+
+            // TODO: naming?? just kalpha??
+            let (_, _, _, kalpha3, kbeta3, kgamma3) = klattice.lattice_params();
+            let (kalpha3, kbeta3, kgamma3): (f64, f64, f64) =
+                (kalpha3.into(), kbeta3.into(), kgamma3.into());
+
+            if f64::cos(kalpha3).abs() < threshold {
+                warn!("aP lattice, but k_alpha3 ~ 90 degrees");
+            }
+
+            if f64::cos(kbeta3).abs() < threshold {
+                warn!("aP lattice, but k_beta3 ~ 90 degrees");
+            }
+
+            if f64::cos(kgamma3).abs() < threshold {
+                warn!("aP lattice, but k_gamma3 ~ 90 degrees");
+            }
+
+            let s = (
+                f64::cos(kalpha3) > 0.0,
+                f64::cos(kbeta3) > 0.0,
+                f64::cos(kgamma3) > 0.0,
+            );
+
+            let m3 = match s {
+                // 1a || 1b
+                (true, true, true) | (false, false, false) => {
+                    matrix_3x3![
+                        1, 0, 0;
+                        0, 1, 0;
+                        0, 0, 1;
+                    ]
+                }
+                // 2a || 2b
+                (true, false, false) | (false, true, true) => {
+                    matrix_3x3![
+                        1,  0, 0;
+                        0, -1, 0;
+                        0,  0, 1;
+                    ]
+                }
+                // 3a || 3b
+                (false, true, false) | (true, false, true) => {
+                    matrix_3x3![
+                        -1,  0,  0;
+                         0,  1,  0;
+                         0,  0, -1;
+                    ]
+                }
+                // 4a || 4b
+                (false, false, true) | (true, true, false) => {
+                    matrix_3x3![
+                        -1,  0, 0;
+                         0, -1, 0;
+                         0,  0, 1;
+                    ]
+                }
+            };
+
+            let klattice = lattice.change_basis_by(&m3).reciprocal();
+            let (_, _, _, kalpha3, kbeta3, kgamma3) = klattice.lattice_params();
+            let (kalpha3, kbeta3, kgamma3): (f64, f64, f64) =
+                (kalpha3.into(), kbeta3.into(), kgamma3.into());
+
+            let s = (
+                f64::cos(kalpha3) > 0.0,
+                f64::cos(kbeta3) > 0.0,
+                f64::cos(kgamma3) > 0.0,
+            );
+
+            match s {
+                // all-acute
+                (true, true, true) => ExtBravaisClass::aP2,
+                // all-obtuse
+                (false, false, false) => ExtBravaisClass::aP3,
+                _ => unreachable!("Unexpected aP triclinic lattice"),
+            }
         }
         BravaisClass::mP => ExtBravaisClass::mP1,
         BravaisClass::mC => {
@@ -217,7 +465,7 @@ pub fn find_path(
                 }
             }
 
-            let mut vec = vec![(a, Face::A), (b, Face::B), (c, Face::C)];
+            let mut vec = [(a, Face::A), (b, Face::B), (c, Face::C)];
             vec.sort_by(|x, y| {
                 y.0.partial_cmp(&x.0)
                     .expect("lattice length compare impossible to be NaN")
@@ -286,4 +534,148 @@ pub fn find_path(
     let path_eval = path::eval(path_info, lattice_params)?;
 
     Ok((path_info, path_eval, structure_priv))
+}
+
+#[allow(non_snake_case, clippy::unreadable_literal)]
+#[cfg(test)]
+mod tests {
+    use ccmat_core::{
+        analyze_symmetry, atomic_number, lattice_angstrom, sites_frac_coord, CrystalBuilder,
+    };
+
+    use crate::find_primitive_hpkot;
+    use crate::BravaisClass;
+
+    macro_rules! assert_eq_approx_vec3 {
+        ($a:expr, $b:expr) => {
+            assert_eq_approx_vec3!($a, $b, 1e-12)
+        };
+        ($a:expr, $b:expr, $tol:expr) => {
+            let (a, b) = ($a, $b);
+            for i in 0..3 {
+                if (a[i] - b[i]).abs() > $tol {
+                    panic!(
+                        "assertion failed: `{:?} ≈ {:?}`, index {}, diff `{}`, tol `{}`",
+                        a,
+                        b,
+                        i,
+                        (a[i] - b[i]).abs(),
+                        $tol
+                    );
+                }
+            }
+        };
+    }
+
+    // this test is only for the purpose to align with the python test in seekpath.
+    // The test there is ill-defined, since the function assume the input structure is standardized
+    // but the test sample didn't hold that assumption.
+    #[test]
+    fn find_primitive_hpkot_bcc() {
+        let lattice = lattice_angstrom![(4.0, 0.0, 0.0), (0.0, 4.0, 0.0), (0.0, 0.0, 4.0),];
+
+        let sites = sites_frac_coord![
+            (0.0, 0.0, 0.0), atomic_number!(C);   // C
+            (0.5, 0.5, 0.5), atomic_number!(C);   // C
+            (0.0, 0.25, 0.0), atomic_number!(O);  // O
+            (0.5, 0.75, 0.5), atomic_number!(O);  // O
+        ];
+
+        let s = CrystalBuilder::new()
+            .with_lattice(&lattice)
+            .with_sites(&sites)
+            .build()
+            .unwrap();
+
+        let syminfo = analyze_symmetry(&s, 1e-5).unwrap();
+
+        // NOTE: the function assume the s is standardized, but it is not here.
+        let (s_priv, _, mapping) = find_primitive_hpkot(&s, &syminfo, 1e-6).unwrap();
+
+        assert_eq!(mapping, [0, 0, 1, 1]);
+        assert_eq_approx_vec3!(s_priv.lattice().a().map(f64::from), [-2.0, 2.0, 2.0]);
+        assert_eq_approx_vec3!(s_priv.lattice().b().map(f64::from), [2.0, -2.0, 2.0]);
+        assert_eq_approx_vec3!(s_priv.lattice().c().map(f64::from), [2.0, 2.0, -2.0]);
+
+        assert_eq_approx_vec3!(s_priv.positions()[0].map(f64::from), [0.0, 0.0, 0.0]);
+        assert_eq_approx_vec3!(s_priv.positions()[1].map(f64::from), [0.25, 0.0, 0.25]);
+    }
+
+    // same as test above, simply to align with seekpath test
+    #[test]
+    fn find_primitive_hpkot_oA() {
+        let lattice = lattice_angstrom![(9.0, 0.0, 0.0), (0.0, 3.0, 0.0), (0.0, 0.0, 3.0),];
+
+        let sites = sites_frac_coord![
+            (0.0, 0.5, 0.46903476), atomic_number!(C);
+            (0.0, 0.5, 0.15103982), atomic_number!(O);
+            (0.0, 0.0, 0.65103982), atomic_number!(O);
+            (0.5, 0.5, 0.87367305), atomic_number!(O);
+            (0.0, 0.0, 0.96903476), atomic_number!(C);
+            (0.5, 0.0, 0.37367305), atomic_number!(O);
+        ];
+
+        let s = CrystalBuilder::new()
+            .with_lattice(&lattice)
+            .with_sites(&sites)
+            .build()
+            .unwrap();
+
+        let syminfo = analyze_symmetry(&s, 1e-5).unwrap();
+
+        // NOTE: the function assumes the structure is standardized — same as earlier test
+        let (mut s_priv, _, mapping) = find_primitive_hpkot(&s, &syminfo, 1e-6).unwrap();
+
+        // expected primitive cell
+        assert_eq_approx_vec3!(s_priv.lattice().a().map(f64::from), [0.0, 1.5, -1.5]);
+        assert_eq_approx_vec3!(s_priv.lattice().b().map(f64::from), [0.0, 1.5, 1.5]);
+        assert_eq_approx_vec3!(s_priv.lattice().c().map(f64::from), [9.0, 0.0, 0.0]);
+
+        assert_eq!(mapping, [0, 1, 1, 2, 0, 2]);
+
+        let expected_positions = [
+            [0.03096524, 0.96903476, 0.0],
+            [0.34896018, 0.65103982, 0.0],
+            [-0.37367305, 1.37367305, 0.5],
+        ];
+
+        for (i, pos) in s_priv.positions().iter().enumerate() {
+            assert_eq_approx_vec3!(pos.map(f64::from), expected_positions[i]);
+        }
+
+        // for the coordinates wrapping into [0.0, 1.0)
+        s_priv.wrap_frac_positions();
+
+        let expected_positions = [
+            [0.03096524, 0.96903476, 0.0],
+            [0.34896018, 0.65103982, 0.0],
+            [0.62632695, 0.37367305, 0.5],
+        ];
+
+        for (i, pos) in s_priv.positions().iter().enumerate() {
+            assert_eq_approx_vec3!(pos.map(f64::from), expected_positions[i]);
+        }
+    }
+
+    // different symprec result in getting differnt bravais lattice
+    #[test]
+    fn symprec_bravais_lattice() {
+        let lattice = lattice_angstrom![(4.0, 0.0, 0.0), (0.0, 4.0, 0.0), (0.0, 0.0, 4.00001),];
+
+        let sites = sites_frac_coord![
+            (0.0, 0.0, 0.0), atomic_number!(C);
+        ];
+
+        let s = CrystalBuilder::new()
+            .with_lattice(&lattice)
+            .with_sites(&sites)
+            .build()
+            .unwrap();
+
+        let syminfo = analyze_symmetry(&s, 1e-8).unwrap();
+        assert_eq!(syminfo.bravais_class(), BravaisClass::tP);
+
+        let syminfo = analyze_symmetry(&s, 1e-3).unwrap();
+        assert_eq!(syminfo.bravais_class(), BravaisClass::cP);
+    }
 }

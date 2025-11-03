@@ -184,7 +184,8 @@ impl From<moyo_wrapper::Cell> for Crystal {
             .iter()
             .zip(numbers)
             .map(|(pos, num)| {
-                let pos: [FracCoord; 3] = pos.map(FracCoord::from);
+                let pos = pos.map(FracCoord::from);
+                let pos = Vector3(pos);
                 let num: u8 = (*num).try_into().expect("atomic number not in 0..128");
                 Site::new(pos, num)
             })

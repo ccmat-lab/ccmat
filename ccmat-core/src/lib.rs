@@ -8,6 +8,6 @@ pub use structure::{
 mod moyo_wrapper;
 
 mod symmetry;
-pub use symmetry::analyze_symmetry;
+pub use symmetry::{analyze_symmetry, SymmetryInfo};
 
 pub mod math;

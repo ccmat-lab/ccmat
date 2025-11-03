@@ -1,5 +1,5 @@
 /*
- * base.rs contains or basic structure (crystal and molecule together) utils.
+ * structure.rs contains of basic structure utils.
  * notes:
  * Operation safety is guranteed by the type.
  * Use Angstrom as the major internal and default API unit to be consistent with xx/xx.
@@ -88,6 +88,34 @@ impl From<f64> for FracCoord {
     }
 }
 
+impl Vector3<FracCoord> {
+    /// m is the matrix transform the coordinates, use inv(m) to transform the vector.
+    ///
+    /// # Errors
+    ///
+    /// error if the det of the transformation matrix is 0, non-invertible or singular.
+    pub fn change_basis_by(
+        &self,
+        m: &TransformationMatrix,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let x: f64 = self[0].into();
+        let y: f64 = self[1].into();
+        let z: f64 = self[2].into();
+
+        // m inv
+        let m = m
+            .inv()
+            .ok_or("singular transformation matrix, det(m) ~ 0")?;
+
+        // (x', y', z') = (x, y, z) * m_inv;
+        let new_x = x * m[0][0] + y * m[0][1] + z * m[0][2];
+        let new_y = x * m[1][0] + y * m[1][1] + z * m[1][2];
+        let new_z = x * m[2][0] + y * m[2][1] + z * m[2][2];
+
+        Ok(Vector3([new_x.into(), new_y.into(), new_z.into()]))
+    }
+}
+
 /// `frac!` macro to create `FracCoord` and validate the value is in between [0.0, 1.0)
 /// at compile time.
 #[macro_export]
@@ -128,11 +156,11 @@ macro_rules! sites_frac_coord {
         let sites = vec![
             $(
                 $crate::Site::new(
-                    [
+                    $crate::math::Vector3::<$crate::FracCoord>([
                         $crate::frac!($x),
                         $crate::frac!($y),
                         $crate::frac!($z),
-                    ],
+                    ]),
                     $kind,
                 )
             ),+
@@ -774,17 +802,22 @@ impl Specie {
 
 #[derive(Debug)]
 pub struct Site {
-    position: [FracCoord; 3],
+    position: Vector3<FracCoord>,
     specie: Specie,
 }
 
 impl Site {
     #[must_use]
-    pub fn new(position: [FracCoord; 3], atomic_number: u8) -> Self {
+    pub fn new(position: Vector3<FracCoord>, atomic_number: u8) -> Self {
         Site {
             position,
             specie: Specie::new(atomic_number),
         }
+    }
+
+    #[must_use]
+    pub fn position(&self) -> Vector3<FracCoord> {
+        self.position
     }
 }
 
@@ -800,7 +833,7 @@ impl Site {
 #[derive(Debug)]
 pub struct Crystal {
     lattice: Lattice,
-    positions: Vec<[FracCoord; 3]>,
+    positions: Vec<Vector3<FracCoord>>,
     species: Vec<Specie>,
 }
 
@@ -824,10 +857,7 @@ impl Crystal {
     #[must_use]
     pub fn positions(&self) -> Vec<Vector3<FracCoord>> {
         // TODO: avoid clone in readonly?
-        self.positions
-            .iter()
-            .map(|p| Vector3::<FracCoord>(*p))
-            .collect()
+        self.positions.clone()
     }
 
     #[must_use]
@@ -838,6 +868,13 @@ impl Crystal {
     #[must_use]
     pub fn volume(&self) -> Volume {
         self.lattice.volume()
+    }
+
+    pub fn wrap_frac_positions(&mut self) {
+        for p in &mut self.positions {
+            let p_ = p.map(|i| FracCoord::from(f64::from(i) - f64::from(i).floor()));
+            *p = Vector3(p_);
+        }
     }
 }
 
@@ -950,7 +987,7 @@ mod tests {
     }
 
     #[test]
-    fn change_basis_by() {
+    fn latt_change_basis_by() {
         let lattice = lattice_angstrom![
             // no orthogonal cell
             a = (2.0, 0.5, 0.0),
@@ -995,9 +1032,28 @@ mod tests {
         assert_eq_approx!(f64::from(latt.a[2]), 0.25, 1e-4);
 
         // b
-        assert_eq_approx!(f64::from(latt.b[2]), 0.433013, 1e-4);
+        assert_eq_approx!(f64::from(latt.b[2]), 0.433_013, 1e-4);
 
         // c
         assert_eq_approx!(f64::from(latt.c[1]), 0.0);
+    }
+
+    #[test]
+    fn position_change_basis_by() {
+        let p = Vector3::<FracCoord>([
+            FracCoord::from(1.0),
+            FracCoord::from(2.0),
+            FracCoord::from(3.0),
+        ]);
+        let m = matrix_3x3![
+            0 1 0;
+            1 0 0;
+            0 0 1;
+        ];
+
+        let pt = p.change_basis_by(&m).unwrap();
+        assert_eq_approx!(f64::from(pt[0]), 2.0);
+        assert_eq_approx!(f64::from(pt[1]), 1.0);
+        assert_eq_approx!(f64::from(pt[2]), 3.0);
     }
 }

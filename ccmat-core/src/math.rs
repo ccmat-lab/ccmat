@@ -3,14 +3,95 @@ use std::ops::{Add, Deref, Index, Mul};
 use crate::structure::{Angstrom, InvAngstrom};
 pub use ccmat_macros::matrix_3x3;
 
-#[derive(Default)]
+#[must_use]
+pub fn approx_f64(a: f64, b: f64, tol: f64) -> bool {
+    f64::abs(a - b) < tol
+}
+
+#[derive(Default, Debug)]
 pub struct Matrix3(pub [[f64; 3]; 3]);
+
+impl Matrix3 {
+    #[must_use]
+    pub fn det(&self) -> f64 {
+        // det=a(ei−fh)−b(di−fg)+c(dh−eg)
+        let m = self.0;
+        m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
+            - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
+            + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0])
+    }
+
+    #[allow(clippy::many_single_char_names)]
+    #[must_use]
+    pub fn inv(&self) -> Option<Self> {
+        let m = &self.0;
+
+        let det = self.det();
+
+        if det.abs() < 1e-12 {
+            return None; // non-invertible or singular
+        }
+
+        let a = m[0][0];
+        let b = m[0][1];
+        let c = m[0][2];
+        let d = m[1][0];
+        let e = m[1][1];
+        let f = m[1][2];
+        let g = m[2][0];
+        let h = m[2][1];
+        let i = m[2][2];
+
+        let inv_det = 1.0 / det;
+
+        let adj = [
+            [(e * i - f * h), -(b * i - c * h), (b * f - c * e)],
+            [-(d * i - f * g), (a * i - c * g), -(a * f - c * d)],
+            [(d * h - e * g), -(a * h - b * g), (a * e - b * d)],
+        ];
+
+        let mut inv = [[0.0; 3]; 3];
+
+        for row in 0..3 {
+            for col in 0..3 {
+                inv[row][col] = adj[row][col] * inv_det;
+            }
+        }
+
+        Some(Self(inv))
+    }
+}
 
 impl Index<usize> for Matrix3 {
     type Output = [f64; 3];
 
     fn index(&self, index: usize) -> &Self::Output {
         &self.0[index]
+    }
+}
+
+impl Mul<Matrix3> for f64 {
+    type Output = Matrix3;
+
+    /// Scalar multiply for a `Matrix3`
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ccmat_core::matrix_3x3;
+    ///
+    /// let mat3 = matrix_3x3![
+    ///     1, 0, 0;
+    ///     0, 1, 0;
+    ///     1, 0, 1;
+    /// ];
+    /// let mat3 = 1./2. * mat3;
+    /// assert_eq!(mat3[0][0], 1./2.);
+    /// assert_eq!(mat3[2][0], 1./2.);
+    /// ```
+    fn mul(self, rhs: Matrix3) -> Self::Output {
+        let v = rhs.0.map(|x| x.map(|x| x * self));
+        Matrix3(v)
     }
 }
 

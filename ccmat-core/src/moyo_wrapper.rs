@@ -138,12 +138,16 @@ impl Cell {
         }
     }
 
-    pub(crate) fn positions(&self) -> &[[f64; 3]] {
-        todo!()
+    pub(crate) fn positions(&self) -> Vec<[f64; 3]> {
+        self.inner
+            .positions
+            .iter()
+            .map(|p| [p[0], p[1], p[2]])
+            .collect()
     }
 
     pub(crate) fn numbers(&self) -> &[i32] {
-        todo!()
+        &self.inner.numbers
     }
 }
 
