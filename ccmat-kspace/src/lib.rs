@@ -5,7 +5,7 @@ use ccmat_core::{
     math::{approx_f64, Matrix3, TransformationMatrix, Vector3},
     matrix_3x3, BravaisClass, Crystal, CrystalBuilder, FracCoord, Site, SymmetryInfo,
 };
-use log::warn;
+use tracing::warn;
 
 use crate::path::{KpathEval, KpathInfo};
 
@@ -239,7 +239,9 @@ pub fn find_path(
 
     let (structure_priv, _, _) = find_primitive_hpkot(&structure_std, &syminfo, symprec)?;
     let lattice_params = structure_priv.lattice().lattice_params();
-    let (a, b, c, alpha, beta, gamma) = lattice_params;
+
+    // lattice parameters are for standard conventional cell
+    let (a, b, c, alpha, beta, gamma) = structure_std.lattice().lattice_params();
     let a: f64 = a.into();
     let b: f64 = b.into();
     let c: f64 = c.into();
@@ -434,15 +436,15 @@ pub fn find_path(
             _ => unreachable!("oS bravais lattice spacegroup number in wrong range"),
         },
         BravaisClass::oF => {
-            if f64::abs((1.0 / a * a) - ((1.0 / b * b) + (1.0 / c * c))) < threshold {
+            if f64::abs(1.0 / (a * a) - (1.0 / (b * b) + 1.0 / (c * c))) < threshold {
                 warn!("oF lattice, but 1/a^2 ~ 1/b^2 + 1/c^2");
             }
-            if f64::abs((1.0 / c * c) - ((1.0 / a * a) + (1.0 / b * b))) < threshold {
+            if f64::abs(1.0 / (c * c) - (1.0 / (a * a) + 1.0 / (b * b))) < threshold {
                 warn!("oF lattice, but 1/c^2 ~ 1/a^2 + 1/b^2");
             }
-            if 1.0 / a * a > (1.0 / b * b) + (1.0 / c * c) {
+            if 1.0 / (a * a) > 1.0 / (b * b) + 1.0 / (c * c) {
                 ExtBravaisClass::oF1
-            } else if 1.0 / c * c > (1.0 / a * a) + (1.0 / b * b) {
+            } else if 1.0 / (c * c) > 1.0 / (a * a) + 1.0 / (b * b) {
                 ExtBravaisClass::oF2
             } else {
                 ExtBravaisClass::oF3
@@ -536,13 +538,19 @@ pub fn find_path(
     Ok((path_info, path_eval, structure_priv))
 }
 
-#[allow(non_snake_case, clippy::unreadable_literal)]
+#[allow(
+    non_snake_case,
+    clippy::unreadable_literal,
+    clippy::excessive_precision
+)]
 #[cfg(test)]
 mod tests {
     use ccmat_core::{
         analyze_symmetry, atomic_number, lattice_angstrom, sites_frac_coord, CrystalBuilder,
     };
+    use tracing_test::traced_test;
 
+    use crate::find_path;
     use crate::find_primitive_hpkot;
     use crate::BravaisClass;
 
@@ -678,4 +686,199 @@ mod tests {
         let syminfo = analyze_symmetry(&s, 1e-3).unwrap();
         assert_eq!(syminfo.bravais_class(), BravaisClass::cP);
     }
+
+    #[traced_test]
+    #[test]
+    fn tI_warn() {
+        let lattice = lattice_angstrom![(4.0, 0.0, 0.0), (0.0, 4.0, 0.0), (0.0, 0.0, 4.0),];
+
+        let sites = sites_frac_coord![
+            (0.0, 0.0, 0.0), atomic_number!(C);
+            (0.5, 0.5, 0.5), atomic_number!(C);
+            (0.0, 0.0, 0.1), atomic_number!(O);
+            (0.5, 0.5, 0.6), atomic_number!(O);
+        ];
+
+        let s = CrystalBuilder::new()
+            .with_lattice(&lattice)
+            .with_sites(&sites)
+            .build()
+            .unwrap();
+
+        let syminfo = analyze_symmetry(&s, 1e-5).unwrap();
+        assert_eq!(syminfo.bravais_class(), BravaisClass::tI);
+
+        let _ = find_path(&s, 1e-5, 1e-7);
+
+        assert!(logs_contain("tI lattice, but a ~ c"));
+    }
+
+    #[ignore = "https://github.com/spglib/moyo/issues/191"]
+    #[traced_test]
+    #[test]
+    fn oF1_warn() {
+        let lattice = lattice_angstrom![
+            (f64::sqrt(1.0 / (1.0 / 16.0 + 1.0 / 25.0)), 0.0, 0.0),
+            (0.0, 4.0, 0.0),
+            (0.0, 0.0, 5.0),
+        ];
+
+        let sites = sites_frac_coord![
+            (0.0, 0.0, 0.0), atomic_number!(C);
+            (0.0, 0.5, 0.5), atomic_number!(C);
+            (0.5, 0.0, 0.5), atomic_number!(C);
+            (0.5, 0.5, 0.0), atomic_number!(C);
+        ];
+
+        let s = CrystalBuilder::new()
+            .with_lattice(&lattice)
+            .with_sites(&sites)
+            .build()
+            .unwrap();
+
+        let syminfo = analyze_symmetry(&s, 1e-5).unwrap();
+        assert_eq!(syminfo.bravais_class(), BravaisClass::oF);
+
+        let _ = find_path(&s, 1e-5, 1e-7);
+
+        assert!(logs_contain("oF lattice, but 1/c^2 ~ 1/a^2 + 1/b^2"));
+    }
+
+    #[traced_test]
+    #[test]
+    fn oF2_warn() {
+        let lattice = lattice_angstrom![
+            (10.0, 0.0, 0.0),
+            (0.0, 21.0, 0.0),
+            (0.0, 0.0, f64::sqrt(1.0 / (1.0 / 100.0 + 1.0 / 441.0))),
+        ];
+
+        let sites = sites_frac_coord![
+            (0.1729328200000002, 0.5632488700000001, 0.9531259500000002), atomic_number!(C);
+            (0.8270671799999998, 0.4367511299999999, 0.9531259500000002), atomic_number!(C);
+            (0.0770671799999998, 0.3132488700000001, 0.7031259500000002), atomic_number!(C);
+            (0.9229328200000002, 0.6867511299999999, 0.7031259500000002), atomic_number!(C);
+            (0.1729328200000002, 0.0632488700000001, 0.4531259500000002), atomic_number!(C);
+            (0.8270671799999998, 0.9367511299999998, 0.4531259500000002), atomic_number!(C);
+            (0.0770671799999998, 0.8132488700000001, 0.2031259500000002), atomic_number!(C);
+            (0.9229328200000002, 0.1867511299999999, 0.2031259500000002), atomic_number!(C);
+            (0.6729328200000002, 0.5632488700000001, 0.4531259500000002), atomic_number!(C);
+            (0.3270671799999998, 0.4367511299999999, 0.4531259500000002), atomic_number!(C);
+            (0.5770671799999998, 0.3132488700000001, 0.2031259500000002), atomic_number!(C);
+            (0.4229328200000002, 0.6867511299999999, 0.2031259500000002), atomic_number!(C);
+            (0.6729328200000002, 0.0632488700000001, 0.9531259500000002), atomic_number!(C);
+            (0.3270671799999998, 0.9367511299999998, 0.9531259500000002), atomic_number!(C);
+            (0.5770671799999998, 0.8132488700000001, 0.7031259500000002), atomic_number!(C);
+            (0.4229328200000002, 0.1867511299999999, 0.7031259500000002), atomic_number!(C);
+            (0.0, 0.5, 0.4701481000000003), atomic_number!(O);
+            (0.75, 0.75, 0.2201481000000003), atomic_number!(O);
+            (0.0, 0.0, 0.9701481000000002), atomic_number!(O);
+            (0.75, 0.25, 0.7201481000000003), atomic_number!(O);
+            (0.5, 0.5, 0.9701481000000002), atomic_number!(O);
+            (0.25, 0.75, 0.7201481000000003), atomic_number!(O);
+            (0.5, 0.0, 0.4701481000000003), atomic_number!(O);
+            (0.25, 0.25, 0.2201481000000003), atomic_number!(O);
+        ];
+
+        let s = CrystalBuilder::new()
+            .with_lattice(&lattice)
+            .with_sites(&sites)
+            .build()
+            .unwrap();
+
+        let syminfo = analyze_symmetry(&s, 1e-5).unwrap();
+        assert_eq!(syminfo.bravais_class(), BravaisClass::oF);
+
+        let _ = find_path(&s, 1e-5, 1e-7);
+
+        assert!(logs_contain("oF lattice, but 1/c^2 ~ 1/a^2 + 1/b^2"));
+    }
+
+    #[traced_test]
+    #[test]
+    fn oI_bc_warn() {
+        let lattice = lattice_angstrom![(4.0, 0.0, 0.0), (0.0, 5.0, 0.0), (0.0, 0.0, 5.0),];
+
+        let sites = sites_frac_coord![
+            (0.0, 0.0, 0.0), atomic_number!(C);
+            (0.5, 0.5, 0.5), atomic_number!(C);
+            (0.0, 0.0, 0.1), atomic_number!(O);
+            (0.5, 0.5, 0.6), atomic_number!(O);
+        ];
+
+        let s = CrystalBuilder::new()
+            .with_lattice(&lattice)
+            .with_sites(&sites)
+            .build()
+            .unwrap();
+
+        let syminfo = analyze_symmetry(&s, 1e-5).unwrap();
+        assert_eq!(syminfo.bravais_class(), BravaisClass::oI);
+
+        let _ = find_path(&s, 1e-5, 1e-7);
+
+        assert!(logs_contain("oI lattice, but the two longest vectors B and C have almost the same length"));
+    }
+
+    #[traced_test]
+    #[test]
+    fn oC_warn() {
+        let lattice = lattice_angstrom![(3.0, 0.0, 0.0), (0.0, 3.0, 0.0), (0.0, 0.0, 5.0),];
+
+        let sites = sites_frac_coord![
+            (0.5000000000000000, 0.1136209299999999, 0.7500967299999999), atomic_number!(C);
+            (0.5000000000000000, 0.8863790700000000, 0.2500967299999999), atomic_number!(C);
+            (0.0000000000000000, 0.6136209300000000, 0.7500967299999999), atomic_number!(C);
+            (0.0000000000000000, 0.3863790700000001, 0.2500967299999999), atomic_number!(C);
+            (0.0000000000000000, 0.8444605049999999, 0.7659032699999999), atomic_number!(O);
+            (0.0000000000000000, 0.1555394950000001, 0.2659032699999999), atomic_number!(O);
+            (0.5000000000000000, 0.3444605049999999, 0.7659032699999999), atomic_number!(O);
+            (0.5000000000000000, 0.6555394950000001, 0.2659032699999999), atomic_number!(O);
+        ];
+
+        let s = CrystalBuilder::new()
+            .with_lattice(&lattice)
+            .with_sites(&sites)
+            .build()
+            .unwrap();
+
+        let syminfo = analyze_symmetry(&s, 1e-5).unwrap();
+        assert_eq!(syminfo.bravais_class(), BravaisClass::oS);
+        assert_eq!(syminfo.spg_number(), 36);
+
+        let _ = find_path(&s, 1e-5, 1e-7);
+
+        assert!(logs_contain("oC lattice, but a ~ b"));
+    }
+
+    #[traced_test]
+    #[test]
+    fn oA_warn() {
+        let lattice = lattice_angstrom![(9.0, 0.0, 0.0), (0.0, 3.0, 0.0), (0.0, 0.0, 3.0),];
+
+        let sites = sites_frac_coord![
+            (0.0000000000000000, 0.0000000000000000, 0.0309652399999998), atomic_number!(C);
+            (0.0000000000000000, 0.5000000000000000, 0.5309652399999998), atomic_number!(C);
+            (0.0000000000000000, 0.5000000000000000, 0.8489601849999999), atomic_number!(O);
+            (0.5000000000000000, 0.5000000000000000, 0.1263269549999999), atomic_number!(O);
+            (0.0000000000000000, 0.0000000000000000, 0.3489601849999999), atomic_number!(O);
+            (0.5000000000000000, 0.0000000000000000, 0.6263269549999999), atomic_number!(O);
+        ];
+
+        let s = CrystalBuilder::new()
+            .with_lattice(&lattice)
+            .with_sites(&sites)
+            .build()
+            .unwrap();
+
+        let syminfo = analyze_symmetry(&s, 1e-5).unwrap();
+        assert_eq!(syminfo.bravais_class(), BravaisClass::oS);
+        assert_eq!(syminfo.spg_number(), 38);
+
+        let _ = find_path(&s, 1e-5, 1e-7);
+
+        assert!(logs_contain("oA lattice, but b ~ c"));
+    }
+
+    // TODO: test on mC and oP for warning messages as well as planed in seekpath
 }

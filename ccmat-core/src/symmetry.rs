@@ -88,6 +88,7 @@ impl SymmetryInfo {
     }
 
     /// Crystal in standard structure
+    #[must_use]
     pub fn standardize_structure(&self) -> Crystal {
         self.inner.std_cell().into()
     }
