@@ -1,0 +1,5 @@
+error: cannot determine float type at compile time; convert explicitly using `f64::from(...)`
+ --> tests/ui/matrix_3x3_frac_var_unknow_fail.rs:7:9
+  |
+7 |         a/b 2 3;
+  |         ^

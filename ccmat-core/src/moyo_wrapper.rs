@@ -1,7 +1,7 @@
 /* Experiments (wishlist) on moyo APIs
  *
- * Everything in moyo mod are expected to go to official moyo crate.
- * This mod should only depend on official moyo crate.
+ * Everything in this moyo_wrapper mod are expected to go to official moyo crate.
+ * In experiment, this mod should only depend on official moyo crate.
  *
  * I suggest to make most of fields private and have field access APIs. This can benifit for
  * keeping the current moyo inner implementation untouched, and leave the door for future
@@ -18,8 +18,13 @@
  */
 use std::borrow::Cow;
 
+// NOTE: I expecte
+// - moyo::base::MoyoError -> moyo::Error,
+// - data::{arithmetic_crystal_class_entry, hall_symbol_entry} are private methods.
+// - MoyoDataSet -> SymmetryInfo as I show and impl below
 use moyo::{
     self,
+    base::MoyoError,
     data::{arithmetic_crystal_class_entry, hall_symbol_entry},
     MoyoDataset,
 };
@@ -133,12 +138,16 @@ impl Cell {
         }
     }
 
-    pub(crate) fn positions(&self) -> &[[f64; 3]] {
-        todo!()
+    pub(crate) fn positions(&self) -> Vec<[f64; 3]> {
+        self.inner
+            .positions
+            .iter()
+            .map(|p| [p[0], p[1], p[2]])
+            .collect()
     }
 
     pub(crate) fn numbers(&self) -> &[i32] {
-        todo!()
+        &self.inner.numbers
     }
 }
 
@@ -210,7 +219,7 @@ impl<L, N> CellBuilder<L, PositionsNotSet, N> {
         positions: Vec<[f64; 3]>,
     ) -> CellBuilder<L, PositionsSet, N> {
         let positions = positions
-            .iter()
+            .into_iter()
             .map(|p| nalgebra::Vector3::new(p[0], p[1], p[2]))
             .collect();
         let inner = moyo::base::Cell {
@@ -249,7 +258,7 @@ impl CellBuilder<LatticeSet, PositionsSet, NumbersSet> {
     /// build the final cell
     ///
     /// I assume moyo for performance doesn't do validation on the structure. To eliminate the ill
-    /// defined structure for instance where the positions.len() != numbers.len().
+    /// defined structure for instance where the length of positions and numbers are not equal.
     pub(crate) fn build(self) -> Cell {
         self.cell
     }
@@ -358,4 +367,35 @@ pub(crate) fn analyze_symmetry(
     let inner = MoyoDataset::with_default(&cell.inner, symprec)?;
     let sym_info = SymmetryInfo { inner };
     Ok(sym_info)
+}
+
+type TransformMatrix = [[i32; 3]; 3];
+type Basis = [[f64; 3]; 3];
+
+// I expect there are three methods: niggli_reduce, niggli_reduce_unchecked, and is_niggli_reduced.
+// In ccmat, I may take the approach of current moyo by only providing them as the methods of
+// Lattice. (TBD) Meanwhile, in ccmat, I only provide niggli_reduce with always validating the
+// result.
+// The reason is I recon moyo is more basic lib to provide the extensive operations.
+//
+// I expect the basis has the same type as input for `Lattice::from_basis()`.
+#[allow(dead_code)]
+pub(crate) fn niggli_reduce_unchecked(basis: Basis) -> (Basis, TransformMatrix) {
+    // NOTE: there is implementation at ``moyo::math::niggli::niggli_reduce`` but not exposed
+    // I have to use Lattice::niggli_reduce`` as work around.
+    let lattice = moyo::base::Lattice::from_basis(basis);
+    let (lattice_converted, mat_trans) = lattice.unchecked_niggli_reduce();
+    (lattice_converted.basis.into(), mat_trans.into())
+}
+
+pub(crate) fn niggli_reduce(basis: Basis) -> Result<(Basis, TransformMatrix), MoyoError> {
+    let lattice = moyo::base::Lattice::from_basis(basis);
+    let (lattice_converted, mat_trans) = lattice.niggli_reduce()?;
+    Ok((lattice_converted.basis.into(), mat_trans.into()))
+}
+
+#[allow(dead_code)]
+pub(crate) fn is_niggli_reduced(basis: Basis) -> bool {
+    let lattice = moyo::base::Lattice::from_basis(basis);
+    lattice.is_niggli_reduced()
 }

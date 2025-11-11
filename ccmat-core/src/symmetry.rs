@@ -10,6 +10,7 @@
 
 use std::borrow::Cow;
 
+use crate::math::{Matrix3, TransformationMatrix, Vector3};
 use crate::moyo_wrapper;
 use crate::structure::Centering;
 use crate::BravaisClass;
@@ -87,6 +88,7 @@ impl SymmetryInfo {
     }
 
     /// Crystal in standard structure
+    #[must_use]
     pub fn standardize_structure(&self) -> Crystal {
         self.inner.std_cell().into()
     }
@@ -104,6 +106,25 @@ pub fn analyze_symmetry(
     let inner = moyo_wrapper::analyze_symmetry(&cell, symprec)?;
     let sym_info = SymmetryInfo { inner };
     Ok(sym_info)
+}
+
+type Basis = [Vector3<f64>; 3];
+
+/// further wrap ``moyo::math::niggili::niggli_reduce`` (however not exposed) into function where the types ccmat confortable to work with.
+pub(crate) fn niggli_reduce(
+    basis: Basis,
+) -> Result<(Basis, TransformationMatrix), Box<dyn std::error::Error + Send + Sync>> {
+    let basis = basis.map(|v| *v);
+    match moyo_wrapper::niggli_reduce(basis) {
+        Ok(result) => {
+            let basis: [Vector3<f64>; 3] = result.0.map(Vector3);
+            let mt = result
+                .1
+                .map(|v| [f64::from(v[0]), f64::from(v[1]), f64::from(v[2])]);
+            Ok((basis, Matrix3(mt)))
+        }
+        Err(err) => Err(format!("niggli reduction failed (moyo as symmery engine): {err}").into()),
+    }
 }
 
 impl From<&Crystal> for moyo_wrapper::Cell {
@@ -164,7 +185,8 @@ impl From<moyo_wrapper::Cell> for Crystal {
             .iter()
             .zip(numbers)
             .map(|(pos, num)| {
-                let pos: [FracCoord; 3] = pos.map(FracCoord::from);
+                let pos = pos.map(FracCoord::from);
+                let pos = Vector3(pos);
                 let num: u8 = (*num).try_into().expect("atomic number not in 0..128");
                 Site::new(pos, num)
             })

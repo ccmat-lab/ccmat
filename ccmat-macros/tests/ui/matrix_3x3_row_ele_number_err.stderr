@@ -1,0 +1,5 @@
+error: each row must contain exactly 3 elements — this row has fewer; the spacing may be ambiguous. Consider using `,` to separate elements explicitly.
+ --> tests/ui/matrix_3x3_row_ele_number_err.rs:5:9
+  |
+5 |         sqrt(3.)/2.    -1./2.     0;
+  |         ^^^^

@@ -1,22 +1,28 @@
-use crate::math::Vec3;
+/*
+ * structure.rs contains of basic structure utils.
+ * notes:
+ * Operation safety is guranteed by the type.
+ * Use Angstrom as the major internal and default API unit to be consistent with xx/xx.
+ * Internally use ``FracCoord`` to represent the position to make sure fractional
+ * coords don’t change if lattice changes shape or scale.
+ *
+ * - Use 'lattice'
+ *
+ * Compile time build errors include:
+ * - when fractional coordinates x not satisfy 0 <= x < 1.0.
+ * - multi-set of lattice and sites.
+ * - not set lattice or sites.
+ *
+ * Following errors or runtime validation.
+ * - exact duplicate sites (? this might be suitable as compile time error, but how?)
+ * - lattice vectors on the same plane
+ *
+ */
 
-/// base.rs contains or basic structure (crystal and molecule together) utils.
-/// notes:
-/// Operation safety is guranteed by the type.
-/// Use Angstrom as the major internal and default API unit to be consistent with xx/xx.
-/// Internally use ``FracCoord`` to represent the position to make sure fractional
-/// coords don’t change if lattice changes shape or scale.
-///
-/// - Use 'lattice'
-///
-/// Compile time build errors include:
-/// - when fractional coordinates x not satisfy 0 <= x < 1.0.
-/// - multi-set of lattice and sites.
-/// - not set lattice or sites.
-///
-/// Following errors or runtime validation.
-/// - exact duplicate sites (? this might be suitable as compile time error, but how?)
-/// - lattice vectors on the same plane
+use crate::{
+    math::{TransformationMatrix, Vector3},
+    symmetry::niggli_reduce,
+};
 
 // TODO: naming convention for vars, check IUCr or cif specification
 // Give a table to compare in between different popular tools.
@@ -82,6 +88,34 @@ impl From<f64> for FracCoord {
     }
 }
 
+impl Vector3<FracCoord> {
+    /// m is the matrix transform the coordinates, use inv(m) to transform the vector.
+    ///
+    /// # Errors
+    ///
+    /// error if the det of the transformation matrix is 0, non-invertible or singular.
+    pub fn change_basis_by(
+        &self,
+        m: &TransformationMatrix,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let x: f64 = self[0].into();
+        let y: f64 = self[1].into();
+        let z: f64 = self[2].into();
+
+        // m inv
+        let m = m
+            .inv()
+            .ok_or("singular transformation matrix, det(m) ~ 0")?;
+
+        // (x', y', z') = (x, y, z) * m_inv;
+        let new_x = x * m[0][0] + y * m[0][1] + z * m[0][2];
+        let new_y = x * m[1][0] + y * m[1][1] + z * m[1][2];
+        let new_z = x * m[2][0] + y * m[2][1] + z * m[2][2];
+
+        Ok(Vector3([new_x.into(), new_y.into(), new_z.into()]))
+    }
+}
+
 /// `frac!` macro to create `FracCoord` and validate the value is in between [0.0, 1.0)
 /// at compile time.
 #[macro_export]
@@ -122,11 +156,11 @@ macro_rules! sites_frac_coord {
         let sites = vec![
             $(
                 $crate::Site::new(
-                    [
+                    $crate::math::Vector3::<$crate::FracCoord>([
                         $crate::frac!($x),
                         $crate::frac!($y),
                         $crate::frac!($z),
-                    ],
+                    ]),
                     $kind,
                 )
             ),+
@@ -206,9 +240,9 @@ pub enum Centering {
 /// TODO: this can derive Copy
 #[derive(Debug, Clone)]
 pub struct Lattice {
-    a: Vec3<Angstrom>,
-    b: Vec3<Angstrom>,
-    c: Vec3<Angstrom>,
+    a: Vector3<Angstrom>,
+    b: Vector3<Angstrom>,
+    c: Vector3<Angstrom>,
 }
 
 /// f64 wrapper for radians
@@ -246,38 +280,40 @@ impl From<f64> for Volume {
 }
 
 /// dot product
-fn dot(v: &Vec3<f64>, u: &Vec3<f64>) -> f64 {
-    v[0] * u[0] + v[1] * u[1] + v[2] + u[2]
+fn dot(v: &Vector3<f64>, u: &Vector3<f64>) -> f64 {
+    v[0] * u[0] + v[1] * u[1] + v[2] * u[2]
 }
 
 /// cross product
-fn cross(u: &Vec3<f64>, v: &Vec3<f64>) -> Vec3<f64> {
-    Vec3::<f64>([
+fn cross(u: &Vector3<f64>, v: &Vector3<f64>) -> Vector3<f64> {
+    Vector3::<f64>([
         u[1] * v[2] - u[2] * v[1],
         u[2] * v[0] - u[0] * v[2],
         u[0] * v[1] - u[1] * v[0],
     ])
 }
 
+// TODO: Lattice and LatticeReciprocal can be generalized through Unit.
+
 impl Lattice {
     // TODO: how to use type system to validate the row/column definition?
     #[must_use]
-    pub fn new(a: Vec3<Angstrom>, b: Vec3<Angstrom>, c: Vec3<Angstrom>) -> Self {
+    pub fn new(a: Vector3<Angstrom>, b: Vector3<Angstrom>, c: Vector3<Angstrom>) -> Self {
         Lattice { a, b, c }
     }
 
     #[must_use]
-    pub fn a(&self) -> Vec3<Angstrom> {
+    pub fn a(&self) -> Vector3<Angstrom> {
         self.a
     }
 
     #[must_use]
-    pub fn b(&self) -> Vec3<Angstrom> {
+    pub fn b(&self) -> Vector3<Angstrom> {
         self.b
     }
 
     #[must_use]
-    pub fn c(&self) -> Vec3<Angstrom> {
+    pub fn c(&self) -> Vector3<Angstrom> {
         self.c
     }
 
@@ -335,6 +371,7 @@ impl Lattice {
         self.lattice_params().5
     }
 
+    #[must_use]
     pub fn volume(&self) -> Volume {
         let (a, b, c) = (self.a.into(), self.b.into(), self.c.into());
 
@@ -343,18 +380,55 @@ impl Lattice {
     }
 
     #[must_use]
-    pub fn reciprocal_lattice(&self) -> LatticeReciprocal {
+    pub fn reciprocal(&self) -> LatticeReciprocal {
         let (a, b, c) = (self.a.into(), self.b.into(), self.c.into());
         let volume: f64 = Volume(dot(&a, &cross(&b, &c))).into();
         let a_star = 1.0 / volume * (2.0 * std::f64::consts::PI) * cross(&b, &c);
         let b_star = 1.0 / volume * (2.0 * std::f64::consts::PI) * cross(&c, &a);
         let c_star = 1.0 / volume * (2.0 * std::f64::consts::PI) * cross(&a, &b);
 
-        let a_star = a_star.map(InvAngstrom::from);
-        let b_star = b_star.map(InvAngstrom::from);
-        let c_star = c_star.map(InvAngstrom::from);
+        let a_star = Vector3(a_star.map(InvAngstrom::from));
+        let b_star = Vector3(b_star.map(InvAngstrom::from));
+        let c_star = Vector3(c_star.map(InvAngstrom::from));
 
         LatticeReciprocal::new(a_star, b_star, c_star)
+    }
+
+    /// Find  niggli reduce lattice.
+    ///
+    /// It using `moyo` to search the niggli reduced lattice, return the reduced lattice and the
+    /// operation matrix.
+    ///
+    /// # Errors
+    ///
+    /// Error when the search failed which happened if the lattice found is not pass the niggli lattice validation.
+    pub fn niggli_reduce(
+        &self,
+    ) -> Result<(Self, TransformationMatrix), Box<dyn std::error::Error + Send + Sync>> {
+        let (a, b, c) = (self.a.into(), self.b.into(), self.c.into());
+        let (basis, matrix) = niggli_reduce([a, b, c])?;
+        let latt = Lattice::new(basis[0].into(), basis[1].into(), basis[2].into());
+        Ok((latt, matrix))
+    }
+
+    /// Lattice is represented in the new basis
+    ///
+    /// (a', b', c') = (a, b, c) * { m00 m01 m02 }
+    ///                            { m10 m11 m12 }
+    ///                            { m20 m21 m22 }
+    ///
+    /// a' = m00 * a + m10 * b + m20 * c
+    /// b' = m01 * a + m11 * b + m21 * c
+    /// c' = m02 * a + m12 * b + m22 * c
+    #[must_use]
+    pub fn change_basis_by(&self, m: &TransformationMatrix) -> Self {
+        let (a, b, c): (Vector3<f64>, Vector3<f64>, Vector3<f64>) =
+            (self.a.into(), self.b.into(), self.c.into());
+        let ap = m[0][0] * a + m[1][0] * b + m[2][0] * c;
+        let bp = m[0][1] * a + m[1][1] * b + m[2][1] * c;
+        let cp = m[0][2] * a + m[1][2] * b + m[2][2] * c;
+
+        Self::new(ap.into(), bp.into(), cp.into())
     }
 }
 
@@ -366,7 +440,7 @@ impl Lattice {
 /// This macro constructs a [`Lattice`] from three lattice vectors (`a`, `b`, and `c`)
 /// expressed as tuples or arrays of three floating-point numbers.
 ///
-/// - Each component is converted to ``Vec3<Angstrom>`` automatically.
+/// - Each component is converted to ``Vector3<Angstrom>`` automatically.
 /// - Both `(x, y, z)` and `[x, y, z]` tuple/array syntax are supported for vector.
 /// - Trailing commas are optional.
 ///
@@ -420,14 +494,14 @@ macro_rules! lattice_angstrom {
     ) => {{
         macro_rules! __vec3_angstrom {
             ([$x:expr, $y:expr, $z:expr]) => {
-                $crate::math::Vec3::<$crate::Angstrom>([
+                $crate::math::Vector3::<$crate::Angstrom>([
                     $crate::Angstrom($x),
                     $crate::Angstrom($y),
                     $crate::Angstrom($z),
                 ])
             };
             (($x:expr, $y:expr, $z:expr)) => {
-                $crate::math::Vec3::<$crate::Angstrom>([
+                $crate::math::Vector3::<$crate::Angstrom>([
                     $crate::Angstrom($x),
                     $crate::Angstrom($y),
                     $crate::Angstrom($z),
@@ -449,14 +523,14 @@ macro_rules! lattice_angstrom {
     ) => {{
         macro_rules! __vec3_angstrom {
             ([$x:expr, $y:expr, $z:expr]) => {
-                $crate::math::Vec3::<$crate::Angstrom>([
+                $crate::math::Vector3::<$crate::Angstrom>([
                     $crate::Angstrom($x),
                     $crate::Angstrom($y),
                     $crate::Angstrom($z),
                 ])
             };
             (($x:expr, $y:expr, $z:expr)) => {
-                $crate::math::Vec3::<$crate::Angstrom>([
+                $crate::math::Vector3::<$crate::Angstrom>([
                     $crate::Angstrom($x),
                     $crate::Angstrom($y),
                     $crate::Angstrom($z),
@@ -474,17 +548,17 @@ macro_rules! lattice_angstrom {
 
 pub struct LatticeReciprocal {
     // internal use a not a_star, but the API is a_star to make it very explicit.
-    a: [InvAngstrom; 3],
-    b: [InvAngstrom; 3],
-    c: [InvAngstrom; 3],
+    a: Vector3<InvAngstrom>,
+    b: Vector3<InvAngstrom>,
+    c: Vector3<InvAngstrom>,
 }
 
 impl LatticeReciprocal {
     #[must_use]
     pub fn new(
-        a_star: [InvAngstrom; 3],
-        b_star: [InvAngstrom; 3],
-        c_star: [InvAngstrom; 3],
+        a_star: Vector3<InvAngstrom>,
+        b_star: Vector3<InvAngstrom>,
+        c_star: Vector3<InvAngstrom>,
     ) -> Self {
         LatticeReciprocal {
             a: a_star,
@@ -494,17 +568,84 @@ impl LatticeReciprocal {
     }
 
     #[must_use]
-    pub fn a_star(&self) -> [InvAngstrom; 3] {
+    pub fn reciprocal(&self) -> Lattice {
+        let (a, b, c) = (self.a.into(), self.b.into(), self.c.into());
+        let volume: f64 = Volume(dot(&a, &cross(&b, &c))).into();
+        let a_star = 1.0 / volume * (2.0 * std::f64::consts::PI) * cross(&b, &c);
+        let b_star = 1.0 / volume * (2.0 * std::f64::consts::PI) * cross(&c, &a);
+        let c_star = 1.0 / volume * (2.0 * std::f64::consts::PI) * cross(&a, &b);
+
+        let a_star = Vector3(a_star.map(Angstrom::from));
+        let b_star = Vector3(b_star.map(Angstrom::from));
+        let c_star = Vector3(c_star.map(Angstrom::from));
+
+        Lattice::new(a_star, b_star, c_star)
+    }
+
+    pub fn lattice_params(&self) -> (InvAngstrom, InvAngstrom, InvAngstrom, Rad, Rad, Rad) {
+        let va = self.a.map(f64::from);
+        let length_a = f64::sqrt(va[0] * va[0] + va[1] * va[1] + va[2] * va[2]);
+
+        let vb = self.b.map(f64::from);
+        let length_b = f64::sqrt(vb[0] * vb[0] + vb[1] * vb[1] + vb[2] * vb[2]);
+
+        let vc = self.c.map(f64::from);
+        let length_c = f64::sqrt(vc[0] * vc[0] + vc[1] * vc[1] + vc[2] * vc[2]);
+
+        let cos_alpha = (vb[0] * vc[0] + vb[1] * vc[1] + vb[2] * vc[2]) / (length_b * length_c);
+        let cos_beta = (va[0] * vc[0] + va[1] * vc[1] + va[2] * vc[2]) / (length_a * length_c);
+        let cos_gamma = (va[0] * vb[0] + va[1] * vb[1] + va[2] * vb[2]) / (length_a * length_b);
+
+        (
+            length_a.into(),
+            length_b.into(),
+            length_c.into(),
+            f64::acos(cos_alpha).into(),
+            f64::acos(cos_beta).into(),
+            f64::acos(cos_gamma).into(),
+        )
+    }
+
+    pub fn niggli_reduce(
+        &self,
+    ) -> Result<(Self, TransformationMatrix), Box<dyn std::error::Error + Send + Sync>> {
+        let (a, b, c) = (self.a.into(), self.b.into(), self.c.into());
+        let (basis, matrix) = niggli_reduce([a, b, c])?;
+        let latt = LatticeReciprocal::new(basis[0].into(), basis[1].into(), basis[2].into());
+        Ok((latt, matrix))
+    }
+
+    /// Lattice is represented in the new basis
+    ///
+    /// (a', b', c') = (a, b, c) * { m00 m01 m02 }
+    ///                            { m10 m11 m12 }
+    ///                            { m20 m21 m22 }
+    ///
+    /// a' = m00 * a + m10 * b + m20 * c
+    /// b' = m01 * a + m11 * b + m21 * c
+    /// c' = m02 * a + m12 * b + m22 * c
+    #[must_use]
+    pub fn change_basis_by(&self, m: &TransformationMatrix) -> Self {
+        let (a, b, c): (Vector3<f64>, Vector3<f64>, Vector3<f64>) =
+            (self.a.into(), self.b.into(), self.c.into());
+        let ap = m[0][0] * a + m[1][0] * b + m[2][0] * c;
+        let bp = m[0][1] * a + m[1][1] * b + m[2][1] * c;
+        let cp = m[0][2] * a + m[1][2] * b + m[2][2] * c;
+        Self::new(ap.into(), bp.into(), cp.into())
+    }
+
+    #[must_use]
+    pub fn a_star(&self) -> Vector3<InvAngstrom> {
         self.a
     }
 
     #[must_use]
-    pub fn b_star(&self) -> [InvAngstrom; 3] {
+    pub fn b_star(&self) -> Vector3<InvAngstrom> {
         self.b
     }
 
     #[must_use]
-    pub fn c_star(&self) -> [InvAngstrom; 3] {
+    pub fn c_star(&self) -> Vector3<InvAngstrom> {
         self.c
     }
 }
@@ -661,17 +802,22 @@ impl Specie {
 
 #[derive(Debug)]
 pub struct Site {
-    position: [FracCoord; 3],
+    position: Vector3<FracCoord>,
     specie: Specie,
 }
 
 impl Site {
     #[must_use]
-    pub fn new(position: [FracCoord; 3], atomic_number: u8) -> Self {
+    pub fn new(position: Vector3<FracCoord>, atomic_number: u8) -> Self {
         Site {
             position,
             specie: Specie::new(atomic_number),
         }
+    }
+
+    #[must_use]
+    pub fn position(&self) -> Vector3<FracCoord> {
+        self.position
     }
 }
 
@@ -687,7 +833,7 @@ impl Site {
 #[derive(Debug)]
 pub struct Crystal {
     lattice: Lattice,
-    positions: Vec<[FracCoord; 3]>,
+    positions: Vec<Vector3<FracCoord>>,
     species: Vec<Specie>,
 }
 
@@ -704,12 +850,14 @@ impl Crystal {
     }
 
     #[must_use]
-    pub fn positions(&self) -> Vec<Vec3<FracCoord>> {
+    pub fn lattice_reciprocal(&self) -> LatticeReciprocal {
+        self.lattice().reciprocal()
+    }
+
+    #[must_use]
+    pub fn positions(&self) -> Vec<Vector3<FracCoord>> {
         // TODO: avoid clone in readonly?
-        self.positions
-            .iter()
-            .map(|p| Vec3::<FracCoord>(*p))
-            .collect()
+        self.positions.clone()
     }
 
     #[must_use]
@@ -721,6 +869,13 @@ impl Crystal {
     pub fn volume(&self) -> Volume {
         self.lattice.volume()
     }
+
+    pub fn wrap_frac_positions(&mut self) {
+        for p in &mut self.positions {
+            let p_ = p.map(|i| FracCoord::from(f64::from(i) - f64::from(i).floor()));
+            *p = Vector3(p_);
+        }
+    }
 }
 
 // pub fn find_primitive_spglib(
@@ -731,9 +886,34 @@ impl Crystal {
 
 #[cfg(test)]
 mod tests {
-    use crate::atomic_number;
+    use crate::{atomic_number, matrix_3x3};
 
     use super::*;
+
+    // TODO: dup, move to test_utils?
+    macro_rules! assert_eq_approx {
+        ($a:expr, $b:expr) => {{
+            assert_eq_approx!($a, $b, 1e-12)
+        }};
+        ($a:expr, $b:expr, $tol:expr) => {{
+            let (left, right) = ($a, $b);
+            if (left - right).abs() > $tol {
+                panic!(
+                    "assertion failed: `{} ≈ {}`, diff:  `{}`, tol: `{}`",
+                    left,
+                    right,
+                    (left - right).abs(),
+                    $tol
+                );
+            }
+        }};
+    }
+
+    #[test]
+    fn build_crystal_compile_error() {
+        let t = trybuild::TestCases::new();
+        t.compile_fail("tests/build_crystal/^fail_*.rs");
+    }
 
     #[test]
     fn macro_lattice_angstrom() {
@@ -758,9 +938,26 @@ mod tests {
     }
 
     #[test]
-    fn build_crystal_compile_error() {
-        let t = trybuild::TestCases::new();
-        t.compile_fail("tests/build_crystal/^fail_*.rs");
+    fn reciprocal() {
+        let lattice = lattice_angstrom![
+            // no orthogonal cell
+            a = (2.0, 0.5, 0.0),
+            b = (0.0, 3.0, 0.5),
+            c = (0.5, 0.0, 4.0),
+        ];
+
+        let latt2 = lattice.reciprocal().reciprocal();
+
+        // a
+        assert_eq_approx!(f64::from(latt2.a[0]), 2.0);
+        assert_eq_approx!(f64::from(latt2.a[1]), 0.5);
+        assert_eq_approx!(f64::from(latt2.a[2]), 0.0);
+
+        // b
+        assert_eq_approx!(f64::from(latt2.b[2]), 0.5);
+
+        // c
+        assert_eq_approx!(f64::from(latt2.c[1]), 0.0);
     }
 
     #[test]
@@ -787,5 +984,76 @@ mod tests {
             .unwrap();
 
         assert_eq!(crystal.volume(), Volume(4.603 * 4.603 * 4.603));
+    }
+
+    #[test]
+    fn latt_change_basis_by() {
+        let lattice = lattice_angstrom![
+            // no orthogonal cell
+            a = (2.0, 0.5, 0.0),
+            b = (0.0, 3.0, 0.5),
+            c = (0.5, 0.0, 4.0),
+        ];
+
+        let tmatrix = matrix_3x3![
+            1 0 0;
+            0 1 0;
+            0 0 1;
+        ];
+
+        let latt = lattice.change_basis_by(&tmatrix);
+        // a
+        assert_eq_approx!(f64::from(latt.a[0]), 2.0);
+        assert_eq_approx!(f64::from(latt.a[1]), 0.5);
+        assert_eq_approx!(f64::from(latt.a[2]), 0.0);
+
+        // b
+        assert_eq_approx!(f64::from(latt.b[2]), 0.5);
+
+        // c
+        assert_eq_approx!(f64::from(latt.c[1]), 0.0);
+
+        // rotate in xy plane
+        let tmatrix = matrix_3x3![
+            sqrt(3.)/2.,    -1./2.,     0;
+            1./2.,     sqrt(3.)/2.,     0;
+            0,                   0,     1;
+        ];
+
+        let latt = lattice.change_basis_by(&tmatrix);
+
+        //  1.73205  1.93301  0.25
+        // -1.0      2.34808  0.433013
+        //  0.5      0.0      4.0
+
+        // a
+        assert_eq_approx!(f64::from(latt.a[0]), 1.73205, 1e-4);
+        assert_eq_approx!(f64::from(latt.a[1]), 1.93301, 1e-4);
+        assert_eq_approx!(f64::from(latt.a[2]), 0.25, 1e-4);
+
+        // b
+        assert_eq_approx!(f64::from(latt.b[2]), 0.433_013, 1e-4);
+
+        // c
+        assert_eq_approx!(f64::from(latt.c[1]), 0.0);
+    }
+
+    #[test]
+    fn position_change_basis_by() {
+        let p = Vector3::<FracCoord>([
+            FracCoord::from(1.0),
+            FracCoord::from(2.0),
+            FracCoord::from(3.0),
+        ]);
+        let m = matrix_3x3![
+            0 1 0;
+            1 0 0;
+            0 0 1;
+        ];
+
+        let pt = p.change_basis_by(&m).unwrap();
+        assert_eq_approx!(f64::from(pt[0]), 2.0);
+        assert_eq_approx!(f64::from(pt[1]), 1.0);
+        assert_eq_approx!(f64::from(pt[2]), 3.0);
     }
 }
