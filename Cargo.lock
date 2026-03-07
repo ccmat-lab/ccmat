@@ -71,6 +71,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ccmat-babel"
+version = "0.1.0"
+dependencies = [
+ "ccmat-core",
+ "extxyz",
+]
+
+[[package]]
 name = "ccmat-core"
 version = "0.1.0"
 dependencies = [
@@ -176,6 +184,18 @@ name = "evalexpr"
 version = "12.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ae893d2d5e908b78f151ed89de3bfc272cdf6d368c7ed866942f98e24dea208a"
+
+[[package]]
+name = "extxyz"
+version = "0.1.0"
+dependencies = [
+ "extxyz-types",
+ "nom",
+]
+
+[[package]]
+name = "extxyz-types"
+version = "0.1.0"
 
 [[package]]
 name = "find-msvc-tools"
@@ -486,6 +506,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "nom"
+version = "8.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "df9761775871bdef83bee530e60050f7e54b1105350d6884eb0fb4f46c2f9405"
+dependencies = [
+ "memchr",
 ]
 
 [[package]]
@@ -817,18 +846,18 @@ dependencies = [
 
 [[package]]
 name = "toml_datetime"
-version = "0.7.3"
+version = "0.7.5+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f2cdb639ebbc97961c51720f858597f7f24c4fc295327923af55b74c3c724533"
+checksum = "92e1cfed4a3038bc5a127e35a2d360f145e1f4b971b551a2ba5fd7aedf7e1347"
 dependencies = [
  "serde_core",
 ]
 
 [[package]]
 name = "toml_parser"
-version = "1.0.4"
+version = "1.0.6+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c0cbe268d35bdb4bb5a56a2de88d0ad0eb70af5384a99d648cd4b3d04039800e"
+checksum = "a3198b4b0a8e11f09dd03e133c0280504d0801269e9afa46362ffde1cbeebf44"
 dependencies = [
  "winnow",
 ]

@@ -5,7 +5,8 @@ mod structure;
 pub use structure::HasBasis;
 pub use structure::{
     Angstrom, Basis, Bohr, BravaisClass, Centering, Crystal, CrystalBuilder, FracCoord, Lattice,
-    LatticeReciprocal, Rad, Site,
+    LatticeReciprocal, Molecule, MoleculeBuilder, MoleculeValidateError, Rad, SiteCartesian,
+    SiteFraction, Structure,
 };
 
 pub mod math;
